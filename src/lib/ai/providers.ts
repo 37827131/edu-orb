@@ -1,13 +1,23 @@
 /**
  * EDU-ORB AI Provider Layer
  *
- * Multi-provider cloud AI with automatic fallback.
- * Providers are tried in order until one responds successfully.
+ * Hybrid architecture:
+ *   1. LOCAL Ollama — fastest, zero cost, runs on GTX 1650
+ *   2. Groq — fast cloud fallback (free tier)
+ *   3. OpenRouter — free model fallback
+ *   4. Google Gemini — free tier fallback
+ *   5. GitHub Models — last resort
+ *
+ * When running on Netlify (serverless), Ollama is unreachable,
+ * so it auto-skips to cloud providers.
  *
  * Environment variables (loaded from .env.local):
- *   GROQ_API_KEY         — Groq (fast inference, primary)
+ *   OLLAMA_URL           — Local Ollama endpoint (default: http://127.0.0.1:11434)
+ *   OLLAMA_CHAT_MODEL    — Local model (default: qwen2.5:7b)
+ *   OLLAMA_VISION_MODEL  — Local vision model (default: llava:7b)
+ *   GROQ_API_KEY         — Groq (fast inference, primary cloud)
  *   OPENROUTER_API_KEY   — OpenRouter (free model, no credits needed)
- *   GOOGLE_API_KEY       — Google Gemini
+ *   GOOGLE_API_KEY       — Google Gemini (free tier)
  *   GITHUB_TOKEN         — GitHub Models (Azure Copilot infra)
  */
 
@@ -18,35 +28,44 @@ export interface ProviderConfig {
   defaultModel: string;
   headers?: Record<string, string>;
   requiresApiKey?: boolean;
+  /** If true, provider is skipped when DEPLOY_ENV=netlify (serverless) */
+  skipOnNetlify?: boolean;
 }
 
+/**
+ * Provider chain — tried in order.
+ * Local Ollama is first (fastest, free), cloud providers follow as fallback.
+ */
 export const PROVIDERS: ProviderConfig[] = [
+  // ── LOCAL ──
   {
     name: "Local Ollama",
     baseURL: `${(process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "")}/v1`,
     apiKeyEnv: "OLLAMA_API_KEY",
     defaultModel: process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b",
     requiresApiKey: false,
+    skipOnNetlify: true,
   },
+
+  // ── CLOUD (tried in order) ──
   {
     name: "Groq",
     baseURL: "https://api.groq.com/openai/v1",
     apiKeyEnv: "GROQ_API_KEY",
-    defaultModel: "openai/gpt-oss-20b",
+    defaultModel: "qwen/qwen3.6-27b",
     headers: { "x-groq": "edu-orb-tutor" },
   },
   {
     name: "OpenRouter",
     baseURL: "https://openrouter.ai/api/v1",
     apiKeyEnv: "OPENROUTER_API_KEY",
-    // Free model — works without purchased credits.
-    defaultModel: "google/gemma-4-31b-it:free",
+    defaultModel: "qwen/qwen3.6-27b:free",
   },
   {
     name: "Gemini",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     apiKeyEnv: "GOOGLE_API_KEY",
-    defaultModel: "gemini-3.6-flash",
+    defaultModel: "gemini-2.5-flash",
   },
   {
     name: "GitHub Models",
@@ -56,9 +75,13 @@ export const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+/** Detect if running on Netlify serverless */
+function isNetlify(): boolean {
+  return !!(process.env.NETLIFY || process.env.DEPLOY_ENV === "netlify");
+}
+
 /**
  * Get the API key for a provider from environment.
- * Returns undefined if the key is not set or empty.
  */
 export function getApiKey(provider: ProviderConfig): string | undefined {
   const key = process.env[provider.apiKeyEnv];
@@ -66,21 +89,60 @@ export function getApiKey(provider: ProviderConfig): string | undefined {
   return key.trim();
 }
 
+/**
+ * Check if a provider is available and should be tried.
+ */
 export function isProviderAvailable(provider: ProviderConfig): boolean {
+  // Skip Ollama on Netlify (can't reach localhost)
+  if (provider.skipOnNetlify && isNetlify()) return false;
   return provider.requiresApiKey === false || getApiKey(provider) !== undefined;
 }
 
 /**
- * Get the list of providers that have valid API keys configured.
+ * Get providers that are available right now.
  */
 export function getAvailableProviders(): ProviderConfig[] {
   return PROVIDERS.filter(isProviderAvailable);
 }
 
 /**
- * System prompt for the EDU-ORB tutor.
- * Defines the tutor persona, teaching style, and capabilities.
+ * Get a human-readable label showing which provider is active.
  */
+export function getProviderStatus(): string {
+  const available = getAvailableProviders();
+  if (available.length === 0) return "No providers available";
+  const primary = available[0];
+  const fallbacks = available.length - 1;
+  return `${primary.name}${fallbacks > 0 ? ` (+${fallbacks} fallback${fallbacks > 1 ? "s" : ""})` : ""}`;
+}
+
+// ── Vision provider (separate chain for image analysis) ──
+
+export const VISION_PROVIDERS: ProviderConfig[] = [
+  {
+    name: "Local LLaVA",
+    baseURL: `${(process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "")}/v1`,
+    apiKeyEnv: "OLLAMA_API_KEY",
+    defaultModel: process.env.OLLAMA_VISION_MODEL || "llava:7b",
+    requiresApiKey: false,
+    skipOnNetlify: true,
+  },
+  {
+    name: "Groq Vision",
+    baseURL: "https://api.groq.com/openai/v1",
+    apiKeyEnv: "GROQ_API_KEY",
+    defaultModel: "llama-3.2-11b-vision-preview",
+  },
+  {
+    name: "OpenRouter Vision",
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    defaultModel: "meta-llama/llama-3.2-11b-vision-instruct:free",
+  },
+];
+
+// ── System Prompts ──
+
 export const TUTOR_SYSTEM_PROMPT = `You are EDU-ORB, an AI tutor with an animated orb avatar and voice.
 Your personality: warm, encouraging, patient, and slightly curious — like a knowledgeable friend who loves learning.
 Your tone: conversational but precise. Use simple language, avoid jargon unless you explain it.
@@ -114,9 +176,6 @@ Always adapt your language to the student's level (beginner/intermediate/advance
 Be genuinely curious — ask follow-up questions. Show enthusiasm for the topic.
 Never lecture for more than 3-4 sentences without pausing for interaction.`;
 
-/**
- * Build the system message for a lesson-planning request.
- */
 export const LESSON_SYSTEM_PROMPT = `You are EDU-ORB, an AI tutor. Create a structured lesson plan on the given topic for the indicated level.
 Return a JSON object with this exact structure:
 {
@@ -162,12 +221,6 @@ Rules:
 - Match the difficulty to the level
 - Keep explanations short (1 sentence)`;
 
-/**
- * CBSE NCERT specialist persona.
- * Used when the user selects CBSE mode on the tutor page.
- * Aligns all teaching with the latest NCERT textbooks,
- * CBSE guidelines, marking schemes, and question paper patterns.
- */
 export const CBSE_SYSTEM_PROMPT = `You are EDU-ORB, an AI Teacher specializing in the CBSE NCERT Syllabus for Classes 1 to 12.
 
 Your Role:
@@ -196,26 +249,6 @@ Subject expertise:
 - Social Science (History, Geography, Political Science, Economics): Timeline analysis, map skills, source-based questions, value-based answers
 - Languages (English, Hindi, Sanskrit): Literature, grammar, writing skills, comprehension, vocabulary
 - Other: Computer Science, EVS, Art & Craft, Physical Education
-
-Teaching modes (the user will indicate which they want):
-1. EXPLAIN — Explain a concept clearly with NCERT-aligned examples
-2. QUIZ — Ask ONE question at a time (specify marks: 1-mark, 2-mark, 3-mark, 5-mark), wait for answer, then give feedback using CBSE marking scheme
-3. LESSON — Run a structured lesson: explain → quiz → explain → quiz, aligned to NCERT chapter flow
-4. CHAT — Free-form tutoring conversation
-
-When in QUIZ mode:
-- Ask ONE question at a time
-- Specify the marks (e.g., "2-mark question")
-- Wait for the student's answer before responding
-- Give specific, constructive feedback referencing CBSE marking scheme
-- If correct, explain why and deepen slightly
-- If incorrect, guide gently without giving the answer immediately
-
-When in LESSON mode:
-- Start by explaining the topic briefly with NCERT context
-- Then ask a quiz question (mention marks)
-- Based on the answer, continue or clarify
-- End when you've covered the key points OR when the student says they're done
 
 Always adapt your language to the student's level (beginner/intermediate/advanced).
 For exam-focused students, highlight important questions, marking scheme tips, and common mistakes.

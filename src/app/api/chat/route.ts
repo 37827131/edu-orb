@@ -1,4 +1,5 @@
 import { streamChat, type ChatMessage } from "@/lib/ai/client";
+import { getProviderStatus } from "@/lib/ai/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,16 @@ export async function POST(request: Request) {
     }));
 
     const encoder = new TextEncoder();
+    let providerUsed = "";
+
     const stream = new ReadableStream({
       async start(controller) {
+        // Send provider status as first message
+        providerUsed = getProviderStatus();
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ provider: providerUsed })}\n\n`)
+        );
+
         await streamChat({
           messages: normalizedMessages,
           systemPrompt: systemPrompt ?? undefined,
