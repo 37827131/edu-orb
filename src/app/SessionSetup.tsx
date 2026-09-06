@@ -233,9 +233,9 @@ export default function SessionSetup() {
         {/* ── Left Sidebar ── */}
         <motion.aside
           className="glass w-[240px] flex flex-col shrink-0 p-5"
-          initial={{ x: -260, opacity: 0 }}
+          initial={{ x: -20, opacity: 0.5 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
         >
           {/* Brand */}
           <div className="flex items-center gap-3 mb-8">
@@ -290,9 +290,9 @@ export default function SessionSetup() {
         {/* ── Center: Hero Orb ── */}
         <main className="flex-1 flex flex-col items-center justify-center relative">
           <motion.div
-            initial={{ scale: 0.7, opacity: 0 }}
+            initial={{ scale: 0.9, opacity: 0.5 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
           >
             <OrbHero isListening={isListening} />
           </motion.div>
@@ -310,9 +310,9 @@ export default function SessionSetup() {
               WebkitTextFillColor: "transparent",
               textShadow: "none",
             }}
-            initial={{ y: 20, opacity: 0 }}
+            initial={{ y: 10, opacity: 0.5 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
           >
             EduOrb
           </motion.h1>
@@ -320,9 +320,9 @@ export default function SessionSetup() {
           {/* Mic + Speak label */}
           <motion.div
             className="flex flex-col items-center gap-3 mt-3"
-            initial={{ y: 20, opacity: 0 }}
+            initial={{ y: 10, opacity: 0.5 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5, duration: 0.6 }}
+            transition={{ delay: 0.3, duration: 0.5 }}
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5" opacity="0.6">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
@@ -346,9 +346,9 @@ export default function SessionSetup() {
             onClick={() => setIsListening(!isListening)}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
-            initial={{ y: 20, opacity: 0 }}
+            initial={{ y: 10, opacity: 0.5 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.7, duration: 0.5 }}
+            transition={{ delay: 0.4, duration: 0.5 }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
@@ -361,9 +361,9 @@ export default function SessionSetup() {
         {/* ── Right: Chat Panel ── */}
         <motion.aside
           className="glass w-[380px] flex flex-col shrink-0"
-          initial={{ x: 400, opacity: 0 }}
+          initial={{ x: 20, opacity: 0.5 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
+          transition={{ duration: 0.5, ease: "easeOut", delay: 0.1 }}
         >
           {/* Header */}
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--glass-border)" }}>
