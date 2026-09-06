@@ -1,0 +1,9 @@
+.git
+.next
+.netlify
+.vercel
+node_modules
+out
+.env*
+*.log
+README.md

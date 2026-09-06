@@ -1,0 +1,103 @@
+name: edu-orb
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edu-orb-web
+    restart: unless-stopped
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:7b}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-llava:7b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      DATABASE_URL: postgresql://eduorb:${POSTGRES_PASSWORD}@db:5432/eduorb
+      S3_ENDPOINT: http://storage:9000
+      S3_BUCKET: eduorb-uploads
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    networks: [frontend, backend]
+    read_only: true
+    tmpfs: [/tmp, /app/.next/cache]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 2.0
+
+  db:
+    image: postgres:16.10-alpine3.22
+    container_name: edu-orb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eduorb
+      POSTGRES_USER: eduorb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [eduorb-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U eduorb -d eduorb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    cap_drop: [ALL]
+    # The official entrypoint must chown PGDATA and switch to postgres.
+    cap_add: [CHOWN, SETUID, SETGID, DAC_READ_SEARCH]
+    mem_limit: 512m
+
+  storage:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    container_name: edu-orb-storage
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes: [eduorb-uploads:/data]
+    healthcheck:
+      test: [CMD, mc, ready, local]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    container_name: edu-orb-proxy
+    restart: unless-stopped
+    ports:
+      - "${EDUORB_HTTP_PORT:-3311}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - eduorb-caddy-data:/data
+      - eduorb-caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [frontend]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  eduorb-db:
+  eduorb-uploads:
+  eduorb-caddy-data:
+  eduorb-caddy-config:
+
+networks:
+  frontend:
+  backend:
+    internal: true
