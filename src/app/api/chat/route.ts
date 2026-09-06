@@ -1,5 +1,5 @@
 import { streamChat, type ChatMessage } from "@/lib/ai/client";
-import { getProviderStatus } from "@/lib/ai/providers";
+import { getAvailableProviders } from "@/lib/ai/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -17,27 +17,30 @@ export async function POST(request: Request) {
       content: m.content,
     }));
 
+    // Show which providers are configured
+    const available = getAvailableProviders();
+    const providerList = available.map((p) => p.name).join(" → ");
+
     const encoder = new TextEncoder();
-    let providerUsed = "";
 
     const stream = new ReadableStream({
       async start(controller) {
-        // Send provider status as first message
-        providerUsed = getProviderStatus();
+        // Send provider chain info
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ provider: providerUsed })}\n\n`)
+          encoder.encode(`data: ${JSON.stringify({ providers: providerList })}\n\n`)
         );
 
+        let success = false;
         await streamChat({
           messages: normalizedMessages,
           systemPrompt: systemPrompt ?? undefined,
           temperature: temperature ?? 0.7,
           onChunk: (text) => {
+            success = true;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`));
           },
           onError: (err) => {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err })}\n\n`));
-            controller.close();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`));
           },
         });
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));

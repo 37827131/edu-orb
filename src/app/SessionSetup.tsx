@@ -151,7 +151,10 @@ function OrbHero({ isListening }: { isListening: boolean }) {
 export default function SessionSetup() {
   const [activeNav, setActiveNav] = useState("voice");
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState(PLACEHOLDER_MESSAGES);
+  const [providerInfo, setProviderInfo] = useState("");
+  const [messages, setMessages] = useState<Array<{ id: string; role: "user" | "bot"; text: string }>>(
+    PLACEHOLDER_MESSAGES.map((m, i) => ({ id: String(i), ...m }))
+  );
   const [isListening, setIsListening] = useState(false);
   const [progress] = useState(92);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -162,18 +165,54 @@ export default function SessionSetup() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
-    setMessages((prev) => [...prev, { role: "user", text }]);
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text }]);
     setInput("");
-    setTimeout(() => {
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [...messages, { role: "user", content: text }] }),
+      });
+
+      if (!res.ok) throw new Error("AI unavailable");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("no stream");
+
+      const decoder = new TextDecoder();
+      let botText = "";
+      const botId = crypto.randomUUID();
+      setMessages((prev) => [...prev, { id: botId, role: "bot", text: "" }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+        for (const line of lines) {
+          const json = line.slice(6).trim();
+          if (json === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(json);
+            if (parsed.providers) setProviderInfo(parsed.providers);
+            if (parsed.delta) {
+              botText += parsed.delta;
+              setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: botText } : m)));
+            }
+          } catch {}
+        }
+      }
+    } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "bot", text: "EDU-ORB processing your query. This is a simulated response — connect Ollama for live AI tutoring." },
+        { id: crypto.randomUUID(), role: "bot", text: "SYSTEM ERROR: AI service unavailable. All providers failed." },
       ]);
-    }, 800);
-  }, [input]);
+    }
+  }, [input, messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -333,7 +372,7 @@ export default function SessionSetup() {
                 EduOrb – AI Tutor
               </div>
               <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--primary)", opacity: 0.5, marginTop: 2 }}>
-                NCERT · Online
+                {providerInfo || "NCERT · Online"}
               </div>
             </div>
             {/* Class label + Progress */}
