@@ -1,7 +1,7 @@
 # Netlify build & deploy config for EDU-ORB (Next.js runtime with API routes)
 [build]
   command = "npm run build"
-  publish = "out"
+  publish = ".next"
 
 [build.processing]
   skip_processing = false
