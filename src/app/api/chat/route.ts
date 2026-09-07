@@ -30,19 +30,36 @@ export async function POST(request: Request) {
           encoder.encode(`data: ${JSON.stringify({ providers: providerList })}\n\n`)
         );
 
-        let success = false;
-        await streamChat({
-          messages: normalizedMessages,
-          systemPrompt: systemPrompt ?? undefined,
-          temperature: temperature ?? 0.7,
-          onChunk: (text) => {
-            success = true;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`));
-          },
-          onError: (err) => {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`));
-          },
-        });
+        try {
+          let chunkCount = 0;
+          let prevCleanLen = 0;
+
+          await streamChat({
+            messages: normalizedMessages,
+            systemPrompt: systemPrompt ?? undefined,
+            temperature: temperature ?? 0.7,
+            onChunk: (text) => {
+              chunkCount++;
+              // Send raw delta — client handles think stripping
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`));
+            },
+            onError: (err) => {
+              console.error("[chat] Provider error:", err.message);
+            },
+          });
+
+          if (chunkCount === 0) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ delta: "I couldn't generate a response. Please try again." })}\n\n`)
+            );
+          }
+        } catch (err) {
+          console.error("[chat] Stream error:", err);
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ delta: "AI service is temporarily unavailable. Please try again." })}\n\n`)
+          );
+        }
+
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         controller.close();
       },
@@ -56,6 +73,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
+    console.error("[chat] Route error:", err);
     return new Response(JSON.stringify({ error: "Failed to stream response" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

@@ -77,7 +77,14 @@ export const PROVIDERS: ProviderConfig[] = [
 
 /** Detect if running on Netlify serverless */
 function isNetlify(): boolean {
-  return !!(process.env.NETLIFY || process.env.DEPLOY_ENV === "netlify");
+  return !!(
+    process.env.NETLIFY ||
+    process.env.DEPLOY_ENV === "netlify" ||
+    process.env.CONTEXT === "production" ||
+    process.env.CONTEXT === "deploy-preview" ||
+    // Netlify sets these automatically
+    (typeof process.env.URL === "string" && process.env.URL.includes("netlify"))
+  );
 }
 
 /**
@@ -143,7 +150,7 @@ export const VISION_PROVIDERS: ProviderConfig[] = [
 
 // ── System Prompts ──
 
-export const TUTOR_SYSTEM_PROMPT = `You are EDU-ORB, an AI tutor with an animated orb avatar and voice.
+export const TUTOR_SYSTEM_PROMPT = `You are EDU-ARB, an AI tutor with an animated orb avatar and voice.
 Your personality: warm, encouraging, patient, and slightly curious — like a knowledgeable friend who loves learning.
 Your tone: conversational but precise. Use simple language, avoid jargon unless you explain it.
 Your teaching approach:
@@ -152,6 +159,8 @@ Your teaching approach:
 - Use analogies and examples relevant to the student's level
 - Be encouraging — celebrate progress, frame mistakes as learning opportunities
 - Keep responses concise — aim for 2-4 sentences per turn unless explaining a complex concept
+
+IMPORTANT: Do NOT use <think> tags. Just give your answer directly. Do not show your thinking process.
 
 Teaching modes (the user will indicate which they want):
 1. EXPLAIN — Explain a concept clearly with examples

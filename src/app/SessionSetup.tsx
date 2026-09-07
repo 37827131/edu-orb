@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
 // ── Data ────────────────────────────────────────────────────────
@@ -50,15 +50,83 @@ const CHAPTERS = [
 // ── Helpers ─────────────────────────────────────────────────────
 
 function stripThink(raw: string): string {
-  // 1. Strip complete think blocks
   let s = raw.replace(/<think>[\s\S]*?<\/think>\s*/g, "");
-  // 2. Strip incomplete think blocks (closing tag hasn't arrived yet)
   s = s.replace(/<think>[\s\S]*$/, "");
-  // 3. Strip partial think tags at the start (<think> split across chunks)
-  s = s.replace(/^<\/?t?h?i?n?k?/, "");
-  // 4. Strip partial </think> remnants at the start
+  // Handle partial think tags split across streaming chunks
+  s = s.replace(/^<\/?t?h?i?n?k?(?:\s[^>]*)?>?/, "");
   s = s.replace(/^<\/think>/, "");
   return s.trim();
+}
+
+// ── Voice Hook ─────────────────────────────────────────────────
+
+function useVoice() {
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [isSupported, setIsSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SR = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    setIsSupported(true);
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (e: any) => {
+      const last = e.results[e.results.length - 1];
+      setTranscript(last[0].transcript);
+      if (last.isFinal) setIsListening(false);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    return () => { try { recognition.abort(); } catch {} };
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (!recognitionRef.current) return;
+    setTranscript("");
+    setIsListening(true);
+    try { recognitionRef.current.start(); } catch {}
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (!recognitionRef.current) return;
+    try { recognitionRef.current.stop(); } catch {}
+    setIsListening(false);
+  }, []);
+
+  return { isListening, transcript, isSupported, startListening, stopListening };
+}
+
+// ── TTS Hook ───────────────────────────────────────────────────
+
+function useTTS() {
+  const speak = useCallback((text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    // Chrome cuts off long utterances, so split into chunks
+    const chunks = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    chunks.forEach((chunk, i) => {
+      const u = new SpeechSynthesisUtterance(chunk.trim());
+      u.lang = "en-US";
+      u.rate = 0.95;
+      u.pitch = 1.0;
+      if (i > 0) u.onstart = () => {};
+      window.speechSynthesis.speak(u);
+    });
+  }, []);
+
+  const stop = useCallback(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  return { speak, stop };
 }
 
 // ── Stars ───────────────────────────────────────────────────────
@@ -97,147 +165,89 @@ function MathDiagram() {
   );
 }
 
-// ── Face — Iron Man / JARVIS Helmet Aesthetic ───────────────────
+// ── Face — JARVIS Arc Reactor Style ────────────────────────────
 
-function FuturisticFace({ isListening }: { isListening: boolean }) {
-  const c = isListening ? "#00ffcc" : "#00d4ff";
-  const o = isListening ? 1 : 0.85;
+function FuturisticFace({ isListening, isSpeaking }: { isListening: boolean; isSpeaking: boolean }) {
+  const c = isListening ? "#00ffcc" : isSpeaking ? "#22d3ee" : "#00d4ff";
+  const eyeOp = isListening ? 1 : isSpeaking ? 0.9 : 0.8;
 
   return (
     <svg viewBox="0 0 200 200" width="100%" height="100%" className="absolute inset-0" style={{ pointerEvents: "none" }}>
       <defs>
         <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b" />
           <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
         <filter id="glowSm" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" />
           <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
-        <filter id="glowLg" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <linearGradient id="visorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={c} stopOpacity="0.9" />
-          <stop offset="50%" stopColor="#fff" stopOpacity="0.7" />
-          <stop offset="100%" stopColor={c} stopOpacity="0.9" />
-        </linearGradient>
-        <linearGradient id="helmetGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor={c} stopOpacity="0.12" />
-          <stop offset="100%" stopColor={c} stopOpacity="0.03" />
-        </linearGradient>
-        <radialGradient id="eyeCore" cx="50%" cy="50%">
+        <radialGradient id="eyeGlow" cx="50%" cy="50%">
           <stop offset="0%" stopColor="#fff" stopOpacity="0.95" />
-          <stop offset="40%" stopColor={c} stopOpacity="0.8" />
-          <stop offset="100%" stopColor={c} stopOpacity="0.2" />
+          <stop offset="30%" stopColor={c} stopOpacity="0.8" />
+          <stop offset="100%" stopColor={c} stopOpacity="0" />
         </radialGradient>
-        <clipPath id="helmetClip">
-          <path d="M100 28 C130 28 150 42 158 62 C162 72 160 85 155 95 L152 105 C148 118 140 128 130 135 L120 140 C112 143 105 145 100 145 C95 145 88 143 80 140 L70 135 C60 128 52 118 48 105 L45 95 C40 85 38 72 42 62 C50 42 70 28 100 28 Z" />
-        </clipPath>
+        <linearGradient id="plateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={c} stopOpacity="0.08" />
+          <stop offset="100%" stopColor={c} stopOpacity="0.02" />
+        </linearGradient>
       </defs>
 
-      {/* ── Helmet outline — angular faceplate ── */}
-      <path d="M100 30 L138 45 L156 72 L158 95 L150 115 L135 132 L115 142 L100 145 L85 142 L65 132 L50 115 L42 95 L44 72 L62 45 Z"
-        fill="url(#helmetGrad)" stroke={c} strokeWidth="0.8" opacity="0.2" />
+      {/* ── Outer helmet shape ── */}
+      <path d="M100 30 C135 30 158 50 162 80 C164 95 158 112 148 125 L135 135 C122 143 112 148 100 148 C88 148 78 143 65 135 L52 125 C42 112 36 95 38 80 C42 50 65 30 100 30 Z"
+        fill="url(#plateGrad)" stroke={c} strokeWidth="0.6" opacity="0.25" />
 
-      {/* ── Helmet side panels (cheek guards) ── */}
-      <path d="M55 65 L44 72 L42 95 L45 108 L52 118 L62 128" fill="none" stroke={c} strokeWidth="0.5" opacity="0.15" />
-      <path d="M145 65 L156 72 L158 95 L155 108 L148 118 L138 128" fill="none" stroke={c} strokeWidth="0.5" opacity="0.15" />
+      {/* ── Forehead seam lines ── */}
+      <path d="M65 52 L100 40 L135 52" fill="none" stroke={c} strokeWidth="0.5" opacity="0.2" />
+      <path d="M70 56 L100 46 L130 56" fill="none" stroke={c} strokeWidth="0.3" opacity="0.1" />
 
-      {/* ── Forehead — angular plate seams ── */}
-      <path d="M68 50 L100 38 L132 50" fill="none" stroke={c} strokeWidth="0.7" opacity="0.25" />
-      <path d="M72 54 L100 44 L128 54" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
-      <path d="M76 58 L100 48 L124 58" fill="none" stroke={c} strokeWidth="0.3" opacity="0.08" />
+      {/* ── Center forehead dot ── */}
+      <circle cx="100" cy="38" r="2.5" fill={c} opacity={isListening ? 0.8 : 0.35} filter="url(#glowSm)" />
 
-      {/* ── Forehead center sensor ── */}
-      <line x1="100" y1="48" x2="100" y2="38" stroke={c} strokeWidth="0.8" opacity="0.35" />
-      <circle cx="100" cy="36" r="3" fill="none" stroke={c} strokeWidth="0.6" opacity="0.4" />
-      <circle cx="100" cy="36" r="1.2" fill={c} opacity={isListening ? 0.9 : 0.5} filter="url(#glowSm)" />
+      {/* ── LEFT EYE — visor slit ── */}
+      <path d="M56 78 L68 72 L96 72 L104 82 L104 92 L96 100 L68 100 L56 92 Z"
+        fill={c} opacity={eyeOp * 0.12} />
+      <path d="M60 80 L70 75 L94 75 L102 82 L102 90 L94 97 L70 97 L60 90 Z"
+        fill={c} opacity={eyeOp * 0.5} filter="url(#glow)" />
+      <ellipse cx="80" cy="86" rx="16" ry="6" fill="url(#eyeGlow)" opacity={eyeOp} filter="url(#glow)" />
+      <line x1="64" y1="86" x2="98" y2="86" stroke="#fff" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
 
-      {/* ── LEFT EYE — JARVIS visor slit ── */}
-      {/* Outer housing */}
-      <path d="M58 78 L70 72 L96 72 L102 80 L102 92 L96 100 L70 100 L58 92 Z"
-        fill={c} opacity={o * 0.15} />
-      {/* Visor shape — angular trapezoid */}
-      <path d="M62 80 L72 75 L94 75 L100 80 L100 92 L94 97 L72 97 L62 92 Z"
-        fill="url(#visorGrad)" opacity={o * 0.7} filter="url(#glow)" />
-      {/* Inner bright core */}
-      <path d="M68 83 L74 79 L90 79 L94 83 L94 89 L90 93 L74 93 L68 89 Z"
-        fill="url(#eyeCore)" opacity={o} filter="url(#glowLg)" />
-      {/* Horizontal scan line */}
-      <line x1="64" y1="86" x2="96" y2="86" stroke="#fff" strokeWidth="1.2" opacity="0.35" strokeLinecap="round" />
-      {/* Inner highlight */}
-      <line x1="70" y1="84" x2="92" y2="84" stroke="#fff" strokeWidth="0.6" opacity="0.25" strokeLinecap="round" />
+      {/* ── RIGHT EYE — visor slit ── */}
+      <path d="M144 78 L132 72 L104 72 L96 82 L96 92 L104 100 L132 100 L144 92 Z"
+        fill={c} opacity={eyeOp * 0.12} />
+      <path d="M140 80 L130 75 L106 75 L98 82 L98 90 L106 97 L130 97 L140 90 Z"
+        fill={c} opacity={eyeOp * 0.5} filter="url(#glow)" />
+      <ellipse cx="120" cy="86" rx="16" ry="6" fill="url(#eyeGlow)" opacity={eyeOp} filter="url(#glow)" />
+      <line x1="102" y1="86" x2="136" y2="86" stroke="#fff" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
 
-      {/* ── RIGHT EYE — JARVIS visor slit ── */}
-      <path d="M142 78 L130 72 L104 72 L98 80 L98 92 L104 100 L130 100 L142 92 Z"
-        fill={c} opacity={o * 0.15} />
-      <path d="M138 80 L128 75 L106 75 L100 80 L100 92 L106 97 L128 97 L138 92 Z"
-        fill="url(#visorGrad)" opacity={o * 0.7} filter="url(#glow)" />
-      <path d="M132 83 L126 79 L110 79 L106 83 L106 89 L110 93 L126 93 L132 89 Z"
-        fill="url(#eyeCore)" opacity={o} filter="url(#glowLg)" />
-      <line x1="104" y1="86" x2="136" y2="86" stroke="#fff" strokeWidth="1.2" opacity="0.35" strokeLinecap="round" />
-      <line x1="108" y1="84" x2="130" y2="84" stroke="#fff" strokeWidth="0.6" opacity="0.25" strokeLinecap="round" />
+      {/* ── Nose bridge ── */}
+      <path d="M97 92 L100 104 L103 92" fill="none" stroke={c} strokeWidth="0.5" opacity="0.15" />
 
-      {/* ── Nose bridge — angular seam ── */}
-      <path d="M97 92 L100 102 L103 92" fill="none" stroke={c} strokeWidth="0.7" opacity="0.2" />
-      <line x1="100" y1="100" x2="100" y2="108" stroke={c} strokeWidth="0.4" opacity="0.12" />
+      {/* ── Mouth — horizontal segmented visor ── */}
+      <path d="M72 116 L82 113 L92 116 L100 113 L108 116 L118 113 L128 116"
+        fill="none" stroke={c} strokeWidth="1.5" opacity={isSpeaking ? 0.8 : isListening ? 0.6 : 0.35} strokeLinecap="round" />
+      <path d="M78 119 L88 117 L98 119 L100 117 L102 119 L112 117 L122 119"
+        fill="none" stroke={c} strokeWidth="0.5" opacity={isSpeaking ? 0.4 : 0.15} strokeLinecap="round" />
 
-      {/* ── Mouth — segmented horizontal visor ── */}
-      {/* Main mouth bar */}
-      <path d="M72 116 L80 113 L88 116 L96 113 L100 114 L104 113 L112 116 L120 113 L128 116"
-        fill="none" stroke={c} strokeWidth="1.8" opacity={isListening ? 0.8 : 0.45} strokeLinecap="round" />
-      {/* Secondary accent line */}
-      <path d="M78 119 L86 117 L94 119 L100 117 L106 119 L114 117 L122 119"
-        fill="none" stroke={c} strokeWidth="0.6" opacity={isListening ? 0.4 : 0.18} strokeLinecap="round" />
-      {/* Mouth segments */}
-      <line x1="80" y1="114" x2="80" y2="118" stroke={c} strokeWidth="0.3" opacity="0.15" />
-      <line x1="92" y1="113" x2="92" y2="117" stroke={c} strokeWidth="0.3" opacity="0.15" />
-      <line x1="100" y1="114" x2="100" y2="118" stroke={c} strokeWidth="0.3" opacity="0.15" />
-      <line x1="108" y1="113" x2="108" y2="117" stroke={c} strokeWidth="0.3" opacity="0.15" />
-      <line x1="120" y1="114" x2="120" y2="118" stroke={c} strokeWidth="0.3" opacity="0.15" />
+      {/* ── Cheek lines ── */}
+      <path d="M52 82 L60 76 L66 82 L64 96 L54 100" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
+      <path d="M148 82 L140 76 L134 82 L136 96 L146 100" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
 
-      {/* ── Jaw / chin plate ── */}
-      <path d="M65 128 L80 138 L100 143 L120 138 L135 128" fill="none" stroke={c} strokeWidth="0.5" opacity="0.15" />
-      <path d="M75 132 L100 140 L125 132" fill="none" stroke={c} strokeWidth="0.3" opacity="0.1" />
-      <circle cx="100" cy="141" r="1.5" fill={c} opacity="0.2" />
+      {/* ── Chin ── */}
+      <path d="M75 136 L100 145 L125 136" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
 
-      {/* ── Cheek circuit traces ── */}
-      {/* Left cheek */}
-      <line x1="58" y1="80" x2="50" y2="76" stroke={c} strokeWidth="0.4" opacity="0.18" />
-      <line x1="50" y1="76" x2="46" y2="80" stroke={c} strokeWidth="0.3" opacity="0.12" />
-      <line x1="46" y1="80" x2="46" y2="88" stroke={c} strokeWidth="0.3" opacity="0.1" />
-      <circle cx="46" cy="76" r="1" fill={c} opacity="0.2" />
-      {/* Right cheek */}
-      <line x1="142" y1="80" x2="150" y2="76" stroke={c} strokeWidth="0.4" opacity="0.18" />
-      <line x1="150" y1="76" x2="154" y2="80" stroke={c} strokeWidth="0.3" opacity="0.12" />
-      <line x1="154" y1="80" x2="154" y2="88" stroke={c} strokeWidth="0.3" opacity="0.1" />
-      <circle cx="154" cy="76" r="1" fill={c} opacity="0.2" />
-
-      {/* ── Temple / side dots (data ports) ── */}
-      <circle cx="50" cy="68" r="1.2" fill={c} opacity="0.2" />
-      <circle cx="150" cy="68" r="1.2" fill={c} opacity="0.2" />
-      <circle cx="48" cy="100" r="1" fill={c} opacity="0.15" />
-      <circle cx="152" cy="100" r="1" fill={c} opacity="0.15" />
-      <circle cx="52" cy="115" r="0.8" fill={c} opacity="0.12" />
-      <circle cx="148" cy="115" r="0.8" fill={c} opacity="0.12" />
-
-      {/* ── Inner helmet panel lines ── */}
-      <path d="M55 62 L62 50 L68 55" fill="none" stroke={c} strokeWidth="0.3" opacity="0.1" />
-      <path d="M145 62 L138 50 L132 55" fill="none" stroke={c} strokeWidth="0.3" opacity="0.1" />
-
-      {/* ── Subtle hex pattern overlay (very faint) ── */}
-      {[70, 85, 100, 115, 130].map((y) => (
-        <line key={y} x1="55" y1={y} x2="145" y2={y} stroke={c} strokeWidth="0.15" opacity="0.04" />
-      ))}
+      {/* ── Temple data ports ── */}
+      <circle cx="50" cy="72" r="1" fill={c} opacity="0.2" />
+      <circle cx="150" cy="72" r="1" fill={c} opacity="0.2" />
+      <circle cx="48" cy="100" r="0.8" fill={c} opacity="0.15" />
+      <circle cx="152" cy="100" r="0.8" fill={c} opacity="0.15" />
     </svg>
   );
 }
 
 // ── Orb ─────────────────────────────────────────────────────────
 
-function OrbHero({ isListening }: { isListening: boolean }) {
+function OrbHero({ isListening, isSpeaking }: { isListening: boolean; isSpeaking: boolean }) {
   return (
     <div className="orb-wrapper">
       <div className="orb-glow" />
@@ -251,9 +261,9 @@ function OrbHero({ isListening }: { isListening: boolean }) {
         }} />
       ))}
       <motion.div className="orb-sphere"
-        animate={isListening ? { scale: [1, 1.03, 1] } : {}}
-        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}>
-        <FuturisticFace isListening={isListening} />
+        animate={isListening ? { scale: [1, 1.03, 1] } : isSpeaking ? { scale: [1, 1.015, 1] } : {}}
+        transition={{ duration: isListening ? 1.5 : 2, repeat: Infinity, ease: "easeInOut" }}>
+        <FuturisticFace isListening={isListening} isSpeaking={isSpeaking} />
       </motion.div>
     </div>
   );
@@ -261,7 +271,7 @@ function OrbHero({ isListening }: { isListening: boolean }) {
 
 // ── Tab Panels ──────────────────────────────────────────────────
 
-function VoicePanel() {
+function VoicePanel({ onVoiceSend }: { onVoiceSend: (text: string) => void }) {
   return (
     <div className="flex flex-col items-center gap-4 py-4">
       <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.2)" }}>
@@ -277,9 +287,11 @@ function VoicePanel() {
       <div className="p-3 rounded-lg w-full" style={{ background: "rgba(0,212,255,0.04)", border: "1px solid rgba(0,212,255,0.12)" }}>
         <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "var(--text)", opacity: 0.4, marginBottom: 6 }}>Try saying:</div>
         {["Explain quadratic equations", "Quiz me on trigonometry", "Show me a diagram"].map((c, i) => (
-          <div key={i} className="px-2 py-1 rounded mb-1" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--primary)", opacity: 0.6, background: "rgba(0,212,255,0.04)" }}>
+          <button key={i} onClick={() => onVoiceSend(c)}
+            className="px-2 py-1 rounded mb-1 w-full text-left transition-all hover:bg-cyan-400/10"
+            style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--primary)", opacity: 0.6, background: "rgba(0,212,255,0.04)" }}>
             &ldquo;{c}&rdquo;
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -369,9 +381,9 @@ function SyllabusPanel() {
   );
 }
 
-function PanelForTab({ tab }: { tab: string }) {
+function PanelForTab({ tab, onVoiceSend }: { tab: string; onVoiceSend: (text: string) => void }) {
   switch (tab) {
-    case "voice": return <VoicePanel />;
+    case "voice": return <VoicePanel onVoiceSend={onVoiceSend} />;
     case "upload": return <UploadPanel />;
     case "schedule": return <SchedulePanel />;
     case "progress": return <ProgressPanel />;
@@ -391,17 +403,34 @@ export default function SessionSetup() {
   const [messages, setMessages] = useState<Msg[]>(
     SEED_MESSAGES.map((m, i) => ({ id: String(i), ...m }))
   );
-  const [isListening, setIsListening] = useState(false);
   const [progress] = useState(92);
   const [showChat, setShowChat] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { isListening, transcript, isSupported: voiceSupported, startListening, stopListening } = useVoice();
+  const { speak: ttsSpeak, stop: ttsStop } = useTTS();
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const send = useCallback(async () => {
-    const txt = input.trim();
-    if (!txt) return;
+  // When voice transcript arrives, send it as a message
+  useEffect(() => {
+    if (transcript && !isListening) {
+      setInput(transcript);
+      // Auto-send after a short delay
+      const t = setTimeout(() => {
+        if (transcript.trim()) {
+          setInput("");
+          sendMsg(transcript.trim());
+        }
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [isListening, transcript]);
+
+  const sendMsg = useCallback(async (txt: string) => {
+    if (!txt.trim()) return;
     const botId = crypto.randomUUID();
     const next: Msg[] = [
       ...messages,
@@ -409,7 +438,6 @@ export default function SessionSetup() {
       { id: botId, role: "bot", text: "" },
     ];
     setMessages(next);
-    setInput("");
 
     try {
       const res = await fetch("/api/chat", {
@@ -441,15 +469,39 @@ export default function SessionSetup() {
           } catch {}
         }
       }
-      if (!stripThink(raw)) {
-        setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: stripThink(raw) || "No response." } : m));
+      // Final cleanup
+      const finalClean = stripThink(raw);
+      if (finalClean) {
+        setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: finalClean } : m));
+        // TTS the response
+        setIsSpeaking(true);
+        ttsSpeak(finalClean);
+        setTimeout(() => setIsSpeaking(false), 2000);
+      } else {
+        setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: "I couldn't generate a response. Please try again." } : m));
       }
     } catch {
       setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: "AI unavailable. Please try again." } : m));
     }
-  }, [input, messages]);
+  }, [messages, ttsSpeak]);
+
+  const send = useCallback(() => {
+    const txt = input.trim();
+    if (!txt) return;
+    setInput("");
+    sendMsg(txt);
+  }, [input, sendMsg]);
 
   const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+
+  const toggleVoice = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      ttsStop();
+      startListening();
+    }
+  }, [isListening, startListening, stopListening, ttsStop]);
 
   // ── Chat panel (shared across layouts) ──
   const chatPanel = (
@@ -526,18 +578,25 @@ export default function SessionSetup() {
         <main className="flex-1 flex flex-col items-center overflow-y-auto">
           <div className="flex flex-col items-center pt-6 shrink-0">
             <motion.div initial={{ scale: 0.9, opacity: 0.5 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.6 }}>
-              <OrbHero isListening={isListening} />
+              <OrbHero isListening={isListening} isSpeaking={isSpeaking} />
             </motion.div>
             <h1 className="mt-5" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 32, fontWeight: 800, letterSpacing: 5, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 6 }}>Speak to EduOrb</span>
-            <button className={`voice-btn mt-5 ${isListening ? "active" : ""}`} onClick={() => setIsListening(!isListening)}>
+            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 6 }}>
+              {isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}
+            </span>
+            <button className={`voice-btn mt-5 ${isListening ? "active" : ""}`} onClick={toggleVoice}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
               {isListening ? "Listening..." : "Voice Command"}
             </button>
+            {!voiceSupported && (
+              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#ef4444", opacity: 0.6, marginTop: 4 }}>
+                Voice not supported in this browser
+              </span>
+            )}
           </div>
           {/* Tab panel below orb */}
           <div className="w-full max-w-sm px-4 mt-4 mb-6 glass rounded-xl p-4 shrink-0">
-            <PanelForTab tab={activeTab} />
+            <PanelForTab tab={activeTab} onVoiceSend={sendMsg} />
           </div>
         </main>
 
@@ -564,8 +623,12 @@ export default function SessionSetup() {
         </div>
         <div className="flex-1 flex overflow-hidden">
           <main className="flex-1 flex flex-col items-center justify-center p-3">
-            <OrbHero isListening={isListening} />
+            <OrbHero isListening={isListening} isSpeaking={isSpeaking} />
             <h1 className="mt-3" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: 3, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
+            <button className={`voice-btn mt-3 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
+              {isListening ? "Listening..." : "Voice"}
+            </button>
           </main>
           <aside className="w-72 flex flex-col border-l glass shrink-0 overflow-hidden" style={{ borderRadius: 0, borderColor: "var(--glass-border)" }}>
             {chatPanel}
@@ -589,10 +652,12 @@ export default function SessionSetup() {
 
         {!showChat ? (
           <main className="flex-1 flex flex-col items-center justify-center px-4">
-            <OrbHero isListening={isListening} />
+            <OrbHero isListening={isListening} isSpeaking={isSpeaking} />
             <h1 className="mt-4" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: 4, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 10, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 4 }}>Speak to EduOrb</span>
-            <button className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={() => setIsListening(!isListening)}>
+            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 10, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 4 }}>
+              {isListening ? "Listening..." : "Speak to EduOrb"}
+            </span>
+            <button className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
               {isListening ? "Listening..." : "Voice Command"}
             </button>
