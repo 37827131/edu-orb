@@ -45,7 +45,7 @@ async function fetchFromProvider(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
     temperature: options.temperature ?? 0.7,
-    max_tokens: options.maxTokens ?? 1024,
+    max_tokens: options.maxTokens ?? 2048,
   };
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -163,22 +163,29 @@ export async function streamChat({
   for (const provider of providersToTry) {
     // Skip providers without keys
     if (!isProviderAvailable(provider)) {
-      lastError = new Error(`${provider.name}: API key not configured`);
+      const skipErr = new Error(`${provider.name}: skipped (API key not configured or unreachable)`);
+      console.log(`[ai] ${skipErr.message}`);
+      lastError = skipErr;
       continue;
     }
 
     try {
+      console.log(`[ai] Trying ${provider.name} (${provider.defaultModel})...`);
       const response = await fetchFromProvider(provider, allMessages, options);
       const stream = parseStream(response);
 
+      let chunkCount = 0;
       for await (const chunk of stream) {
         onChunk(chunk);
+        chunkCount++;
       }
 
+      console.log(`[ai] ${provider.name} succeeded with ${chunkCount} chunks`);
       // Success — exit the fallback loop
       return;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[ai] ${provider.name} failed:`, lastError.message);
       if (onError) {
         onError(lastError, provider.name);
       }
