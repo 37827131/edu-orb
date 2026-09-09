@@ -27,27 +27,13 @@ export interface StreamingOptions {
   maxTokens?: number;
 }
 
-// ── Rate-limit cooldown tracker ──
-// When a provider returns 429, skip it for 5 minutes.
-const rateLimitCooldowns = new Map<string, number>();
-const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+// No in-memory cooldown — on serverless (Netlify Lambda), the Map persists
+// across requests within the same instance, permanently blacklisting providers
+// after the first 429. The skipRemainingGroq flag handles the shared-key case.
 
-function isInCooldown(providerName: string): boolean {
-  const until = rateLimitCooldowns.get(providerName);
-  if (!until) return false;
-  if (Date.now() < until) return true;
-  rateLimitCooldowns.delete(providerName);
-  return false;
-}
-
-function markRateLimited(providerName: string): void {
-  rateLimitCooldowns.set(providerName, Date.now() + COOLDOWN_MS);
-  console.warn(`[ai] ${providerName}: rate-limited, cooling down for 5 minutes`);
-}
-
-// 3-second timeout per provider — 3 × 3 = 9s, fits Netlify free tier ~10s limit
-// (providers respond in 1-2s normally; 3s covers cold starts)
-const PROVIDER_TIMEOUT_MS = 3_000;
+// 5-second timeout per provider — health check proved Gemini needs ~3-4s from Netlify
+// 3 × 5 = 15s max, but skipRemainingGroq saves ~5s when Groq 429s
+const PROVIDER_TIMEOUT_MS = 5_000;
 
 /**
  * Fetch a streaming completion from a single provider.
@@ -61,11 +47,6 @@ async function fetchFromProvider(
   const apiKey = getApiKey(provider);
   if (!apiKey && provider.requiresApiKey !== false) {
     throw new Error(`${provider.name}: API key not configured`);
-  }
-
-  // Skip providers in rate-limit cooldown
-  if (isInCooldown(provider.name)) {
-    throw new Error(`${provider.name}: in rate-limit cooldown`);
   }
 
   const body: Record<string, unknown> = {
@@ -107,10 +88,6 @@ async function fetchFromProvider(
   }
 
   if (!response.ok) {
-    // Track 429 rate limits specifically
-    if (response.status === 429) {
-      markRateLimited(provider.name);
-    }
     const text = await response.text().catch(() => "");
     throw new Error(
       `${provider.name}: HTTP ${response.status} — ${text.slice(0, 200)}`
