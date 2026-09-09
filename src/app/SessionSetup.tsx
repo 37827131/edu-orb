@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 
 // ── Data ────────────────────────────────────────────────────────
 
+type Board = "cbse" | "cambridge";
+
 const NAV_ITEMS = [
   { id: "voice", label: "Voice", icon: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3" },
   { id: "upload", label: "Vision", icon: "M7 16a4 4 0 0 1-.88-7.903A5 5 0 1 1 15.9 6L16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" },
@@ -21,32 +23,75 @@ const SEED_MESSAGES = [
   { role: "bot" as const, text: "Imagine a ladder leaning against a wall. If the ladder is 5 m long and the base is 3 m from the wall, the height is √(5²−3²) = 4 m." },
 ];
 
-const SCHEDULE = [
-  { time: "09:00", subject: "Mathematics", topic: "Polynomials", done: true },
-  { time: "10:30", subject: "Physics", topic: "Motion & Force", done: true },
-  { time: "12:00", subject: "Chemistry", topic: "Atoms & Molecules", active: true },
-  { time: "14:00", subject: "English", topic: "The Fun They Had" },
-  { time: "15:30", subject: "Biology", topic: "Cell Structure" },
-];
+// ── Board-Specific Data ────────────────────────────────────────
 
-const SUBJECTS = [
-  { name: "Mathematics", pct: 92, color: "#00d4ff" },
-  { name: "Physics", pct: 78, color: "#a855f7" },
-  { name: "Chemistry", pct: 65, color: "#22d3ee" },
-  { name: "English", pct: 88, color: "#00d4ff" },
-  { name: "Biology", pct: 71, color: "#a855f7" },
-];
-
-const CHAPTERS = [
-  { title: "Number Systems", status: "done" },
-  { title: "Polynomials", status: "done" },
-  { title: "Coordinate Geometry", status: "done" },
-  { title: "Linear Equations", status: "active" },
-  { title: "Euclid's Geometry", status: "locked" },
-  { title: "Lines and Angles", status: "locked" },
-  { title: "Triangles", status: "locked" },
-  { title: "Quadrilaterals", status: "locked" },
-];
+const BOARD_DATA: Record<Board, {
+  label: string;
+  classes: string[];
+  defaultClass: string;
+  subjects: { name: string; pct: number; color: string }[];
+  schedule: { time: string; subject: string; topic: string; done?: boolean; active?: boolean }[];
+  chapters: { title: string; status: "done" | "active" | "locked" }[];
+}> = {
+  cbse: {
+    label: "CBSE NCERT",
+    classes: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
+    defaultClass: "Class 9",
+    subjects: [
+      { name: "Mathematics", pct: 92, color: "#00d4ff" },
+      { name: "Physics", pct: 78, color: "#a855f7" },
+      { name: "Chemistry", pct: 65, color: "#22d3ee" },
+      { name: "English", pct: 88, color: "#00d4ff" },
+      { name: "Biology", pct: 71, color: "#a855f7" },
+    ],
+    schedule: [
+      { time: "09:00", subject: "Mathematics", topic: "Polynomials", done: true },
+      { time: "10:30", subject: "Physics", topic: "Motion & Force", done: true },
+      { time: "12:00", subject: "Chemistry", topic: "Atoms & Molecules", active: true },
+      { time: "14:00", subject: "English", topic: "The Fun They Had" },
+      { time: "15:30", subject: "Biology", topic: "Cell Structure" },
+    ],
+    chapters: [
+      { title: "Number Systems", status: "done" },
+      { title: "Polynomials", status: "done" },
+      { title: "Coordinate Geometry", status: "done" },
+      { title: "Linear Equations", status: "active" },
+      { title: "Euclid's Geometry", status: "locked" },
+      { title: "Lines and Angles", status: "locked" },
+      { title: "Triangles", status: "locked" },
+      { title: "Quadrilaterals", status: "locked" },
+    ],
+  },
+  cambridge: {
+    label: "Cambridge IGCSE",
+    classes: ["Year 7", "Year 8", "Year 9", "IGCSE Year 10", "IGCSE Year 11", "AS Level", "A Level"],
+    defaultClass: "IGCSE Year 10",
+    subjects: [
+      { name: "Mathematics", pct: 85, color: "#00d4ff" },
+      { name: "Physics", pct: 82, color: "#a855f7" },
+      { name: "Chemistry", pct: 74, color: "#22d3ee" },
+      { name: "English Language", pct: 90, color: "#00d4ff" },
+      { name: "Biology", pct: 79, color: "#a855f7" },
+    ],
+    schedule: [
+      { time: "08:30", subject: "Mathematics", topic: "Algebra & Functions", done: true },
+      { time: "09:45", subject: "Physics", topic: "Forces & Motion", done: true },
+      { time: "11:00", subject: "Chemistry", topic: "Atomic Structure", active: true },
+      { time: "13:00", subject: "English Language", topic: "Reading Comprehension" },
+      { time: "14:15", subject: "Biology", topic: "Cell Biology" },
+    ],
+    chapters: [
+      { title: "Number & Algebra", status: "done" },
+      { title: "Coordinate Geometry", status: "done" },
+      { title: "Mensuration", status: "done" },
+      { title: "Statistics & Probability", status: "active" },
+      { title: "Forces & Motion", status: "locked" },
+      { title: "Energy Resources", status: "locked" },
+      { title: "Chemical Bonding", status: "locked" },
+      { title: "Organic Chemistry", status: "locked" },
+    ],
+  },
+};
 
 const MAX_VISION_BYTES = 10 * 1024 * 1024;
 const VISION_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -120,7 +165,7 @@ async function readChatStream(response: Response, onPayload: (payload: ChatPaylo
     try {
       onPayload(JSON.parse(data) as ChatPayload);
     } catch {
-      // Ignore malformed partial payloads. The stream buffer keeps incomplete events.
+      // Ignore malformed partial payloads.
     }
   };
 
@@ -545,7 +590,7 @@ function VoicePanel({ onVoiceSend }: { onVoiceSend: (text: string) => void }) {
         <div className="hint-label">Try saying:</div>
         {["Explain quadratic equations", "Quiz me on trigonometry", "Show me a diagram"].map((command) => (
           <button key={command} type="button" onClick={() => onVoiceSend(command)} className="hint-command">
-            “{command}”
+            &ldquo;{command}&rdquo;
           </button>
         ))}
       </div>
@@ -601,23 +646,24 @@ function UploadPanel({ onVisionSend }: { onVisionSend: (file: File) => Promise<v
         {status === "uploading" ? "Analyzing..." : "Choose File"}
       </button>
       <div className="upload-status" data-state={status}>{message}</div>
-      <div className="hint-label">JPG, PNG, WEBP — Max 10MB</div>
+      <div className="hint-label">JPG, PNG, WEBP &mdash; Max 10MB</div>
     </div>
   );
 }
 
-function SchedulePanel() {
+function SchedulePanel({ board }: { board: Board }) {
+  const data = BOARD_DATA[board].schedule;
   return (
     <div className="panel-list">
       <h3 className="panel-heading">Today&apos;s Schedule</h3>
-      {SCHEDULE.map((item) => (
+      {data.map((item) => (
         <div key={`${item.time}-${item.subject}`} className={`schedule-row ${item.done ? "opacity-45" : item.active ? "schedule-row--active" : ""}`}>
           <span className="schedule-time">{item.time}</span>
           <div className="min-w-0 flex-1">
             <div className="schedule-subject">{item.subject}</div>
             <div className="schedule-topic">{item.topic}</div>
           </div>
-          {item.done && <span className="status-done">✓</span>}
+          {item.done && <span className="status-done">&check;</span>}
           {item.active && <span className="status-active" />}
         </div>
       ))}
@@ -625,13 +671,14 @@ function SchedulePanel() {
   );
 }
 
-function ProgressPanel() {
-  const avg = Math.round(SUBJECTS.reduce((a, b) => a + b.pct, 0) / SUBJECTS.length);
+function ProgressPanel({ board }: { board: Board }) {
+  const subjects = BOARD_DATA[board].subjects;
+  const avg = Math.round(subjects.reduce((a, b) => a + b.pct, 0) / subjects.length);
 
   return (
     <div className="panel-list">
       <h3 className="panel-heading">Progress Report</h3>
-      {SUBJECTS.map((subject) => (
+      {subjects.map((subject) => (
         <div key={subject.name}>
           <div className="progress-title-row">
             <span>{subject.name}</span>
@@ -648,14 +695,15 @@ function ProgressPanel() {
   );
 }
 
-function SyllabusPanel() {
+function SyllabusPanel({ board, selectedClass }: { board: Board; selectedClass: string }) {
+  const data = BOARD_DATA[board];
   return (
     <div className="panel-list panel-list--tight">
-      <h3 className="panel-heading">CBSE Class 9 — Math</h3>
-      {CHAPTERS.map((chapter, index) => (
+      <h3 className="panel-heading">{data.label} &mdash; {selectedClass}</h3>
+      {data.chapters.map((chapter, index) => (
         <div key={chapter.title} className={`chapter-row ${chapter.status === "locked" ? "opacity-35" : ""}`}>
           <div className={`chapter-badge chapter-badge--${chapter.status}`}>
-            {chapter.status === "done" ? "✓" : chapter.status === "active" ? "▶" : "🔒"}
+            {chapter.status === "done" ? "&check;" : chapter.status === "active" ? "&#9654;" : "&#128274;"}
           </div>
           <div className="chapter-title">Ch {index + 1}: {chapter.title}</div>
         </div>
@@ -664,13 +712,41 @@ function SyllabusPanel() {
   );
 }
 
-function PanelForTab({ tab, onVoiceSend, onVisionSend }: { tab: string; onVoiceSend: (text: string) => void; onVisionSend: (file: File) => Promise<void> }) {
+function BoardSelector({ board, onBoardChange, selectedClass, onClassChange }: {
+  board: Board;
+  onBoardChange: (b: Board) => void;
+  selectedClass: string;
+  onClassChange: (c: string) => void;
+}) {
+  const data = BOARD_DATA[board];
+  return (
+    <div className="board-selector">
+      <div className="board-tabs">
+        <button type="button" className={`board-tab ${board === "cbse" ? "active" : ""}`} onClick={() => { onBoardChange("cbse"); onClassChange(BOARD_DATA.cbse.defaultClass); }}>CBSE</button>
+        <button type="button" className={`board-tab ${board === "cambridge" ? "active" : ""}`} onClick={() => { onBoardChange("cambridge"); onClassChange(BOARD_DATA.cambridge.defaultClass); }}>Cambridge</button>
+      </div>
+      <select className="class-select" value={selectedClass} onChange={(e) => onClassChange(e.target.value)}>
+        {data.classes.map((cls) => (
+          <option key={cls} value={cls}>{cls}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function PanelForTab({ tab, onVoiceSend, onVisionSend, board, selectedClass }: {
+  tab: string;
+  onVoiceSend: (text: string) => void;
+  onVisionSend: (file: File) => Promise<void>;
+  board: Board;
+  selectedClass: string;
+}) {
   switch (tab) {
     case "voice": return <VoicePanel onVoiceSend={onVoiceSend} />;
     case "upload": return <UploadPanel onVisionSend={onVisionSend} />;
-    case "schedule": return <SchedulePanel />;
-    case "progress": return <ProgressPanel />;
-    case "syllabus": return <SyllabusPanel />;
+    case "schedule": return <SchedulePanel board={board} />;
+    case "progress": return <ProgressPanel board={board} />;
+    case "syllabus": return <SyllabusPanel board={board} selectedClass={selectedClass} />;
     default: return null;
   }
 }
@@ -687,6 +763,9 @@ function ChatPanel({
   providerInfo,
   progress,
   isCompact,
+  boardLabel,
+  selectedClass,
+  isSending,
 }: {
   messages: Msg[];
   input: string;
@@ -697,16 +776,19 @@ function ChatPanel({
   providerInfo: string;
   progress: number;
   isCompact?: boolean;
+  boardLabel: string;
+  selectedClass: string;
+  isSending: boolean;
 }) {
   return (
     <section className="chat-panel-root">
       <header className={`chat-header ${isCompact ? "chat-header--compact" : ""}`}>
         <div className="min-w-0">
-          <div className="chat-title">EduOrb – AI Tutor</div>
-          <div className="chat-provider truncate">{providerInfo || "NCERT · Online"}</div>
+          <div className="chat-title">EduOrb &ndash; AI Tutor</div>
+          <div className="chat-provider truncate">{providerInfo || `${boardLabel} &middot; Online`}</div>
         </div>
         <div className="chat-class">
-          <div>Class 9 CBSE</div>
+          <div>{selectedClass} {boardLabel.split(" ")[0]}</div>
           <div className="progress-track mt-1"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
         </div>
       </header>
@@ -731,17 +813,44 @@ function ChatPanel({
             value={input}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
             onKeyDown={onKey}
-            placeholder="Ask EduOrb anything..."
+            placeholder={isSending ? "AI is thinking..." : "Ask EduOrb anything..."}
             className="chat-input flex-1"
             rows={1}
+            disabled={isSending}
           />
-          <button type="button" onClick={send} disabled={!input.trim()} className="send-btn">
-            Send
+          <button type="button" onClick={send} disabled={!input.trim() || isSending} className="send-btn">
+            {isSending ? "..." : "Send"}
           </button>
         </div>
       </footer>
     </section>
   );
+}
+
+// ── Retry-capable fetch ─────────────────────────────────────────
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1200;
+
+async function fetchWithRetry(url: string, init: RequestInit, retries = MAX_RETRIES): Promise<Response> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok) return response;
+      // Don't retry on 4xx client errors (except 429 rate limit)
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+      lastError = new Error(`Server error (${response.status})`);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error("Request failed after retries");
 }
 
 // ── Main ────────────────────────────────────────────────────────
@@ -751,11 +860,17 @@ export default function SessionSetup() {
   const [input, setInput] = useState("");
   const [providerInfo, setProviderInfo] = useState("");
   const [messages, setMessages] = useState<Msg[]>(SEED_MESSAGES.map((message, index) => ({ id: String(index), ...message })));
-  const [progress] = useState(92);
   const [showChat, setShowChat] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [board, setBoard] = useState<Board>("cbse");
+  const [selectedClass, setSelectedClass] = useState(BOARD_DATA.cbse.defaultClass);
   const endRef = useRef<HTMLDivElement>(null);
   const orbSize = useOrbSize();
+
+  // Use refs for values needed inside callbacks to avoid stale closures
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening } = useVoice();
   const { speak: ttsSpeak, stop: ttsStop } = useTTS();
@@ -766,24 +881,23 @@ export default function SessionSetup() {
 
   const sendMsg = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || isSending) return;
 
     const userMessage: Msg = { id: crypto.randomUUID(), role: "user", text: trimmed };
     const botId = crypto.randomUUID();
-    const visibleMessages = [...messages, userMessage];
+    const visibleMessages = [...messagesRef.current, userMessage];
     const displayMessages: Msg[] = [...visibleMessages, { id: botId, role: "bot", text: "" }];
 
     setMessages(displayMessages);
     setShowChat(true);
+    setIsSending(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetchWithRetry("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toApiMessages(visibleMessages) }),
+        body: JSON.stringify({ messages: toApiMessages(visibleMessages), subject: activeTab }),
       });
-
-      if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
 
       let raw = "";
       await readChatStream(response, (payload) => {
@@ -802,13 +916,16 @@ export default function SessionSetup() {
         setIsSpeaking(true);
         ttsSpeak(finalClean, () => setIsSpeaking(false));
       } else {
-        setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: "I couldn't generate a response. Please try again." } : message));
+        setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: "I couldn&apos;t generate a response. Please try again." } : message));
       }
     } catch (error) {
+      console.error("[chat] sendMsg error:", error);
       setIsSpeaking(false);
-      setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: getReadableError(error, "AI unavailable. Please try again.") } : message));
+      setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: getReadableError(error, "AI service is temporarily unavailable. Please try again.") } : message));
+    } finally {
+      setIsSending(false);
     }
-  }, [messages, ttsSpeak]);
+  }, [activeTab, isSending, ttsSpeak]);
 
   const handleVisionUpload = useCallback(async (file: File) => {
     const userId = crypto.randomUUID();
@@ -825,7 +942,7 @@ export default function SessionSetup() {
     formData.append("image", file);
     formData.append("prompt", "Analyze this uploaded educational image. Explain the solution clearly, step by step, and keep the answer student-friendly.");
 
-    const response = await fetch("/api/vision", { method: "POST", body: formData });
+    const response = await fetchWithRetry("/api/vision", { method: "POST", body: formData });
     const data = await response.json().catch(() => ({} as { answer?: string; provider?: string; error?: string }));
 
     if (!response.ok) {
@@ -858,10 +975,10 @@ export default function SessionSetup() {
 
   const send = useCallback(() => {
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed || isSending) return;
     setInput("");
     void sendMsg(trimmed);
-  }, [input, sendMsg]);
+  }, [input, sendMsg, isSending]);
 
   const onKey = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -885,6 +1002,8 @@ export default function SessionSetup() {
     setShowChat(shouldShowChat);
   }, []);
 
+  const boardLabel = BOARD_DATA[board].label;
+
   return (
     <div className="app-root">
       <div className="cosmos" /><Stars />
@@ -899,6 +1018,7 @@ export default function SessionSetup() {
             <LogoIcon className="w-7 h-7" />
             <span className="brand-text">EduOrb</span>
           </div>
+          <BoardSelector board={board} onBoardChange={setBoard} selectedClass={selectedClass} onClassChange={setSelectedClass} />
           <nav className="nav-list">
             {NAV_ITEMS.map((item) => (
               <button key={item.id} type="button" onClick={() => openTab(item.id)} className={`nav-item ${activeTab === item.id ? "active" : ""}`}>
@@ -928,12 +1048,24 @@ export default function SessionSetup() {
             {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
           </div>
           <div className="glass info-panel">
-            <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
+            <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} board={board} selectedClass={selectedClass} />
           </div>
         </main>
 
         <aside className="glass desktop-chat">
-          <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} />
+          <ChatPanel
+            messages={messages}
+            input={input}
+            setInput={setInput}
+            send={send}
+            onKey={onKey}
+            endRef={endRef}
+            providerInfo={providerInfo}
+            progress={Math.round(BOARD_DATA[board].subjects.reduce((a, b) => a + b.pct, 0) / BOARD_DATA[board].subjects.length)}
+            boardLabel={boardLabel}
+            selectedClass={selectedClass}
+            isSending={isSending}
+          />
         </aside>
       </div>
 
@@ -941,6 +1073,7 @@ export default function SessionSetup() {
       <div className="tablet-shell">
         <header className="tablet-topbar glass">
           <div className="brand-row brand-row--compact"><LogoIcon className="w-6 h-6" /><span className="brand-text">EduOrb</span></div>
+          <BoardSelector board={board} onBoardChange={setBoard} selectedClass={selectedClass} onClassChange={setSelectedClass} />
           <div className="topbar-actions">
             {NAV_ITEMS.map((item) => (
               <button key={item.id} type="button" onClick={() => openTab(item.id)} className={`topbar-icon ${activeTab === item.id ? "active" : ""}`} aria-label={item.label}>
@@ -958,11 +1091,23 @@ export default function SessionSetup() {
               {isListening ? "Listening..." : "Voice"}
             </button>
             <div className="glass info-panel info-panel--tablet">
-              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
+              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} board={board} selectedClass={selectedClass} />
             </div>
           </main>
           <aside className="glass tablet-chat">
-            <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} />
+            <ChatPanel
+              messages={messages}
+              input={input}
+              setInput={setInput}
+              send={send}
+              onKey={onKey}
+              endRef={endRef}
+              providerInfo={providerInfo}
+              progress={Math.round(BOARD_DATA[board].subjects.reduce((a, b) => a + b.pct, 0) / BOARD_DATA[board].subjects.length)}
+              boardLabel={boardLabel}
+              selectedClass={selectedClass}
+              isSending={isSending}
+            />
           </aside>
         </div>
       </div>
@@ -971,9 +1116,15 @@ export default function SessionSetup() {
       <div className="mobile-shell">
         <header className="mobile-topbar glass">
           <div className="brand-row brand-row--compact"><LogoIcon className="w-6 h-6" /><span className="brand-text">EduOrb</span></div>
-          <button type="button" onClick={() => setShowChat((value) => !value)} className="mobile-toggle">
-            {showChat ? "Orb" : "Chat"}
-          </button>
+          <div className="mobile-topbar-right">
+            <div className="mobile-board-toggle">
+              <button type="button" className={`board-pill ${board === "cbse" ? "active" : ""}`} onClick={() => { setBoard("cbse"); setSelectedClass(BOARD_DATA.cbse.defaultClass); }}>CBSE</button>
+              <button type="button" className={`board-pill ${board === "cambridge" ? "active" : ""}`} onClick={() => { setBoard("cambridge"); setSelectedClass(BOARD_DATA.cambridge.defaultClass); }}>Cambridge</button>
+            </div>
+            <button type="button" onClick={() => setShowChat((value) => !value)} className="mobile-toggle">
+              {showChat ? "Orb" : "Chat"}
+            </button>
+          </div>
         </header>
 
         {!showChat ? (
@@ -988,12 +1139,25 @@ export default function SessionSetup() {
             </button>
             {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
             <div className="glass info-panel info-panel--mobile">
-              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
+              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} board={board} selectedClass={selectedClass} />
             </div>
           </main>
         ) : (
           <div className="mobile-chat-view">
-            <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} isCompact />
+            <ChatPanel
+              messages={messages}
+              input={input}
+              setInput={setInput}
+              send={send}
+              onKey={onKey}
+              endRef={endRef}
+              providerInfo={providerInfo}
+              progress={Math.round(BOARD_DATA[board].subjects.reduce((a, b) => a + b.pct, 0) / BOARD_DATA[board].subjects.length)}
+              isCompact
+              boardLabel={boardLabel}
+              selectedClass={selectedClass}
+              isSending={isSending}
+            />
           </div>
         )}
 
