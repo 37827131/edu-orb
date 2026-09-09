@@ -55,16 +55,16 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: "qwen/qwen3.8-27b",
   },
   {
-    name: "OpenRouter",
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKeyEnv: "OPENROUTER_API_KEY",
-    defaultModel: "minimax/minimax-m3:free",
+    name: "Groq-Llama",
+    baseURL: "https://api.groq.com/openai/v1",
+    apiKeyEnv: "GROQ_API_KEY",
+    defaultModel: "llama-3.1-8b-instant",
   },
   {
     name: "Gemini",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     apiKeyEnv: "GOOGLE_API_KEY",
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3.5-flash-lite",
   },
 ];
 
