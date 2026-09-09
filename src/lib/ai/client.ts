@@ -3,6 +3,7 @@
  *
  * Streams completions from the first available provider.
  * Falls back through the provider list on failure.
+ * Tracks rate-limited providers with a 5-minute cooldown.
  */
 
 import {
@@ -26,6 +27,27 @@ export interface StreamingOptions {
   maxTokens?: number;
 }
 
+// ── Rate-limit cooldown tracker ──
+// When a provider returns 429, skip it for 5 minutes.
+const rateLimitCooldowns = new Map<string, number>();
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+function isInCooldown(providerName: string): boolean {
+  const until = rateLimitCooldowns.get(providerName);
+  if (!until) return false;
+  if (Date.now() < until) return true;
+  rateLimitCooldowns.delete(providerName);
+  return false;
+}
+
+function markRateLimited(providerName: string): void {
+  rateLimitCooldowns.set(providerName, Date.now() + COOLDOWN_MS);
+  console.warn(`[ai] ${providerName}: rate-limited, cooling down for 5 minutes`);
+}
+
+// 7-second timeout per provider — 3 × 7 = 21s, safely under 28s Netlify limit
+const PROVIDER_TIMEOUT_MS = 7_000;
+
 /**
  * Fetch a streaming completion from a single provider.
  * Returns the Response object or throws.
@@ -38,6 +60,11 @@ async function fetchFromProvider(
   const apiKey = getApiKey(provider);
   if (!apiKey && provider.requiresApiKey !== false) {
     throw new Error(`${provider.name}: API key not configured`);
+  }
+
+  // Skip providers in rate-limit cooldown
+  if (isInCooldown(provider.name)) {
+    throw new Error(`${provider.name}: in rate-limit cooldown`);
   }
 
   const body: Record<string, unknown> = {
@@ -57,9 +84,8 @@ async function fetchFromProvider(
     }
   }
 
-  // 10-second timeout per provider — allows full fallback chain within 28s Netlify limit
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -72,7 +98,7 @@ async function fetchFromProvider(
   } catch (fetchError) {
     clearTimeout(timeout);
     if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
-      throw new Error(`${provider.name}: Request timed out after 10s`);
+      throw new Error(`${provider.name}: Request timed out after ${PROVIDER_TIMEOUT_MS / 1000}s`);
     }
     throw fetchError;
   } finally {
@@ -80,6 +106,10 @@ async function fetchFromProvider(
   }
 
   if (!response.ok) {
+    // Track 429 rate limits specifically
+    if (response.status === 429) {
+      markRateLimited(provider.name);
+    }
     const text = await response.text().catch(() => "");
     throw new Error(
       `${provider.name}: HTTP ${response.status} — ${text.slice(0, 200)}`
@@ -198,8 +228,8 @@ export async function streamChat({
         chunkCount++;
         lastChunkTime = Date.now();
 
-        // If no chunk for 8 seconds, break and try next provider
-        if (Date.now() - lastChunkTime > 8000) {
+        // If no chunk for 5 seconds, break and try next provider
+        if (Date.now() - lastChunkTime > 5000) {
           console.warn(`[ai] ${provider.name}: stream stalled, trying next provider`);
           break;
         }
