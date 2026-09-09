@@ -57,9 +57,9 @@ async function fetchFromProvider(
     }
   }
 
-  // 25-second timeout to prevent hanging on slow providers
+  // 10-second timeout per provider — allows full fallback chain within 28s Netlify limit
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
 
   let response: Response;
   try {
@@ -72,7 +72,7 @@ async function fetchFromProvider(
   } catch (fetchError) {
     clearTimeout(timeout);
     if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
-      throw new Error(`${provider.name}: Request timed out after 25s`);
+      throw new Error(`${provider.name}: Request timed out after 10s`);
     }
     throw fetchError;
   } finally {
@@ -191,9 +191,18 @@ export async function streamChat({
       const stream = parseStream(response);
 
       let chunkCount = 0;
+      let lastChunkTime = Date.now();
+
       for await (const chunk of stream) {
         onChunk(chunk);
         chunkCount++;
+        lastChunkTime = Date.now();
+
+        // If no chunk for 8 seconds, break and try next provider
+        if (Date.now() - lastChunkTime > 8000) {
+          console.warn(`[ai] ${provider.name}: stream stalled, trying next provider`);
+          break;
+        }
       }
 
       console.log(`[ai] ${provider.name} succeeded with ${chunkCount} chunks`);
