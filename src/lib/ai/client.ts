@@ -57,11 +57,27 @@ async function fetchFromProvider(
     }
   }
 
-  const response = await fetch(`${provider.baseURL}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  // 25-second timeout to prevent hanging on slow providers
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${provider.baseURL}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (fetchError) {
+    clearTimeout(timeout);
+    if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
+      throw new Error(`${provider.name}: Request timed out after 25s`);
+    }
+    throw fetchError;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

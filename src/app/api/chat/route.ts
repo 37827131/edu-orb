@@ -6,6 +6,7 @@ export const maxDuration = 60;
 
 const MAX_MESSAGES = 18;
 const MAX_MESSAGE_CHARS = 6000;
+const STREAM_TIMEOUT_MS = 28000; // 28s to stay within Netlify's 30s function limit
 
 function normalizeMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) return [];
@@ -49,7 +50,8 @@ export async function POST(request: Request) {
         try {
           let chunkCount = 0;
 
-          await streamChat({
+          // Wrap streamChat with a timeout
+          const streamPromise = streamChat({
             messages: normalizedMessages,
             temperature,
             systemPrompt: CBSE_SYSTEM_PROMPT,
@@ -61,6 +63,12 @@ export async function POST(request: Request) {
               console.error(`[chat] ${providerName} error:`, error.message);
             },
           });
+
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Stream timed out")), STREAM_TIMEOUT_MS)
+          );
+
+          await Promise.race([streamPromise, timeoutPromise]);
 
           if (chunkCount === 0) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: "I couldn't generate a response. Please try again." })}\n\n`));
