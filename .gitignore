@@ -35,3 +35,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# EDU-ORB Secrets Vault (GPG encrypted)
+.edu-orb-vault/
