@@ -233,6 +233,7 @@ function useVoice() {
   const listeningRef = useRef(false);
   const transcriptRef = useRef("");
   const restartCountRef = useRef(0);
+  const finalTextRef = useRef("");
 
   useEffect(() => {
     listeningRef.current = isListening;
@@ -252,26 +253,34 @@ function useVoice() {
 
     setIsSupported(true);
     const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const last = event.results[event.results.length - 1];
-      if (!last?.[0]) return;
-      const heard = last[0].transcript;
-      transcriptRef.current = heard;
-      setTranscript(heard);
-      if (last.isFinal) {
-        setIsListening(false);
-        listeningRef.current = false;
-        restartCountRef.current = 0;
+      let interimText = "";
+      let finalText = finalTextRef.current;
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalText += result[0].transcript + " ";
+          finalTextRef.current = finalText;
+        } else {
+          interimText += result[0].transcript;
+        }
+      }
+
+      const displayText = (finalText + interimText).trim();
+      if (displayText) {
+        transcriptRef.current = displayText;
+        setTranscript(displayText);
       }
     };
 
     recognition.onend = () => {
-      if (listeningRef.current && restartCountRef.current < 1 && !transcriptRef.current) {
+      if (listeningRef.current && restartCountRef.current < 3 && !finalTextRef.current) {
         restartCountRef.current += 1;
         try { recognition.start(); } catch {}
         return;
@@ -282,6 +291,7 @@ function useVoice() {
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (event.error === "aborted") return;
       console.warn("[voice] error:", event.error);
       setError(event.error || "unknown");
       setIsListening(false);
@@ -296,6 +306,7 @@ function useVoice() {
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
     transcriptRef.current = "";
+    finalTextRef.current = "";
     setTranscript("");
     setError("");
     setIsListening(true);
@@ -386,8 +397,8 @@ function useTTS() {
       const utterance = new SpeechSynthesisUtterance(chunk);
       utterance.lang = voice?.lang || "en-US";
       utterance.voice = voice;
-      utterance.rate = 0.9;
-      utterance.pitch = 1.03;
+      utterance.rate = 1.1;
+      utterance.pitch = 1.0;
       utterance.volume = 1;
       utterance.onend = finishChunk;
       utterance.onerror = finishChunk;
@@ -918,6 +929,7 @@ export default function SessionSetup() {
       if (finalClean) {
         setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: finalClean } : message));
         setIsSpeaking(true);
+        stopListening();
         ttsSpeak(finalClean, () => setIsSpeaking(false));
       } else {
         setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: "I couldn&apos;t generate a response. Please try again." } : message));
@@ -929,7 +941,7 @@ export default function SessionSetup() {
     } finally {
       setIsSending(false);
     }
-  }, [activeTab, isSending, ttsSpeak]);
+  }, [activeTab, isSending, ttsSpeak, stopListening]);
 
   const handleVisionUpload = useCallback(async (file: File) => {
     const userId = crypto.randomUUID();
@@ -964,15 +976,11 @@ export default function SessionSetup() {
 
   useEffect(() => {
     if (transcript && !isListening) {
-      setInput(transcript);
-      const timer = window.setTimeout(() => {
-        const finalTranscript = transcript.trim();
-        if (finalTranscript) {
-          setInput("");
-          void sendMsg(finalTranscript);
-        }
-      }, 300);
-      return () => window.clearTimeout(timer);
+      const finalTranscript = transcript.trim();
+      if (finalTranscript) {
+        setInput("");
+        void sendMsg(finalTranscript);
+      }
     }
     return undefined;
   }, [isListening, sendMsg, transcript]);
@@ -995,11 +1003,13 @@ export default function SessionSetup() {
     if (isListening) {
       stopListening();
     } else {
-      ttsStop();
-      setIsSpeaking(false);
+      if (isSpeaking) {
+        ttsStop();
+        setIsSpeaking(false);
+      }
       startListening();
     }
-  }, [isListening, startListening, stopListening, ttsStop]);
+  }, [isListening, isSpeaking, startListening, stopListening, ttsStop]);
 
   const openTab = useCallback((tab: string, shouldShowChat = false) => {
     setActiveTab(tab);
@@ -1043,11 +1053,11 @@ export default function SessionSetup() {
               <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
             </motion.div>
             <h1 className="app-title">EduOrb</h1>
-            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}</span>
+            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Tap to speak"}</span>
             {voiceError && voiceError !== "no-speech" && <span className="voice-error">Mic error: {voiceError}</span>}
-            <button type="button" className={`voice-btn mt-4 ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <button type="button" className={`voice-btn mt-4 ${isListening ? "active" : ""}`} onClick={toggleVoice} disabled={isSending && !isListening}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
-              {isListening ? "Listening..." : "Voice Command"}
+              {isListening ? "Listening..." : isSpeaking ? "Tap to interrupt" : "Voice Command"}
             </button>
             {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
           </div>
@@ -1090,9 +1100,9 @@ export default function SessionSetup() {
           <main className="tablet-center">
             <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
             <h1 className="app-title app-title--tablet">EduOrb</h1>
-            <button type="button" className={`voice-btn mt-3 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <button type="button" className={`voice-btn mt-3 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice} disabled={isSending && !isListening}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
-              {isListening ? "Listening..." : "Voice"}
+              {isListening ? "Listening..." : isSpeaking ? "Interrupt" : "Voice"}
             </button>
             <div className="glass info-panel info-panel--tablet">
               <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} board={board} selectedClass={selectedClass} />
@@ -1135,11 +1145,11 @@ export default function SessionSetup() {
           <main className="mobile-orb-view">
             <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
             <h1 className="app-title app-title--mobile">EduOrb</h1>
-            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}</span>
+            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Tap to speak"}</span>
             {voiceError && voiceError !== "no-speech" && <span className="voice-error">Mic error: {voiceError}</span>}
-            <button type="button" className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <button type="button" className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice} disabled={isSending && !isListening}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
-              {isListening ? "Listening..." : "Voice Command"}
+              {isListening ? "Listening..." : isSpeaking ? "Tap to interrupt" : "Voice Command"}
             </button>
             {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
             <div className="glass info-panel info-panel--mobile">
