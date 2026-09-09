@@ -1,82 +1,89 @@
 import { streamChat, type ChatMessage } from "@/lib/ai/client";
-import { getAvailableProviders } from "@/lib/ai/providers";
+import { getAvailableProviders, CBSE_SYSTEM_PROMPT } from "@/lib/ai/providers";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+const MAX_MESSAGES = 18;
+const MAX_MESSAGE_CHARS = 6000;
+
+function normalizeMessages(input: unknown): ChatMessage[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .filter((message): message is { role: string; content: string } => (
+      !!message &&
+      typeof message === "object" &&
+      typeof (message as { role?: unknown }).role === "string" &&
+      typeof (message as { content?: unknown }).content === "string"
+    ))
+    .map((message) => ({
+      role: message.role === "assistant" ? "assistant" : message.role === "system" ? "system" : "user",
+      content: message.content.trim().slice(0, MAX_MESSAGE_CHARS),
+    }))
+    .filter((message) => message.content.length > 0)
+    .slice(-MAX_MESSAGES) as ChatMessage[];
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { messages, systemPrompt, temperature } = body as {
-      messages: Array<{ role: string; content: string }>;
-      systemPrompt?: string;
-      temperature?: number;
-    };
+    const body = await request.json().catch(() => null) as { messages?: unknown; temperature?: unknown } | null;
+    const normalizedMessages = normalizeMessages(body?.messages);
 
-    const normalizedMessages: ChatMessage[] = messages.map((m) => ({
-      role: m.role as ChatMessage["role"],
-      content: m.content,
-    }));
+    if (normalizedMessages.length === 0) {
+      return Response.json({ error: "At least one message is required" }, { status: 400 });
+    }
 
-    // Show which providers are configured
+    const temperature = typeof body?.temperature === "number" && Number.isFinite(body.temperature)
+      ? Math.min(1.2, Math.max(0, body.temperature))
+      : 0.7;
+
     const available = getAvailableProviders();
-    const providerList = available.map((p) => p.name).join(" → ");
-
+    const providerList = available.length > 0 ? available.map((provider) => provider.name).join(" → ") : "No provider configured";
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
       async start(controller) {
-        // Send provider chain info
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ providers: providerList })}\n\n`)
-        );
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ providers: providerList })}\n\n`));
 
         try {
           let chunkCount = 0;
-          let prevCleanLen = 0;
 
           await streamChat({
             messages: normalizedMessages,
-            systemPrompt: systemPrompt ?? undefined,
-            temperature: temperature ?? 0.7,
+            temperature,
+            systemPrompt: CBSE_SYSTEM_PROMPT,
             onChunk: (text) => {
-              chunkCount++;
-              // Send raw delta — client handles think stripping
+              chunkCount += 1;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`));
             },
-            onError: (err) => {
-              console.error("[chat] Provider error:", err.message);
+            onError: (error, providerName) => {
+              console.error(`[chat] ${providerName} error:`, error.message);
             },
           });
 
           if (chunkCount === 0) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ delta: "I couldn't generate a response. Please try again." })}\n\n`)
-            );
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: "I couldn't generate a response. Please try again." })}\n\n`));
           }
-        } catch (err) {
-          console.error("[chat] Stream error:", err);
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ delta: "AI service is temporarily unavailable. Please try again." })}\n\n`)
-          );
+        } catch (error) {
+          console.error("[chat] Stream error:", error);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: "AI service is temporarily unavailable. Please try again." })}\n\n`));
         }
 
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
     });
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
       },
     });
-  } catch (err) {
-    console.error("[chat] Route error:", err);
-    return new Response(JSON.stringify({ error: "Failed to stream response" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+  } catch (error) {
+    console.error("[chat] Route error:", error);
+    return Response.json({ error: "Failed to stream response" }, { status: 500 });
   }
 }

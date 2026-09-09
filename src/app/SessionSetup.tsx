@@ -1,23 +1,24 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import { motion } from "framer-motion";
 
 // ── Data ────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { id: "voice",    label: "Voice",  icon: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3" },
-  { id: "upload",   label: "Upload",   icon: "M7 16a4 4 0 0 1-.88-7.903A5 5 0 1 1 15.9 6L16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" },
-  { id: "schedule", label: "Schedule",    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" },
+  { id: "voice", label: "Voice", icon: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3" },
+  { id: "upload", label: "Vision", icon: "M7 16a4 4 0 0 1-.88-7.903A5 5 0 1 1 15.9 6L16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" },
+  { id: "schedule", label: "Schedule", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" },
   { id: "progress", label: "Progress", icon: "M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" },
-  { id: "syllabus", label: "Syllabus",       icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" },
-];
+  { id: "syllabus", label: "Syllabus", icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" },
+] as const;
 
 const SEED_MESSAGES = [
   { role: "user" as const, text: "Explain the Pythagoras theorem with a diagram." },
-  { role: "bot" as const,  text: "In a right-angled triangle, the square of the hypotenuse equals the sum of the squares of the other two sides. Mathematically: a\u00B2 + b\u00B2 = c\u00B2." },
+  { role: "bot" as const, text: "In a right-angled triangle, the square of the hypotenuse equals the sum of the squares of the other two sides: a² + b² = c²." },
   { role: "user" as const, text: "Can you show me a real-world example?" },
-  { role: "bot" as const,  text: "Imagine a ladder leaning against a wall. The wall and ground form a right angle. If the ladder is 5 m long (hypotenuse) and the base is 3 m from the wall, the height it reaches is \u221A(5\u00B2\u22123\u00B2) = 4 m." },
+  { role: "bot" as const, text: "Imagine a ladder leaning against a wall. If the ladder is 5 m long and the base is 3 m from the wall, the height is √(5²−3²) = 4 m." },
 ];
 
 const SCHEDULE = [
@@ -47,6 +48,33 @@ const CHAPTERS = [
   { title: "Quadrilaterals", status: "locked" },
 ];
 
+const MAX_VISION_BYTES = 10 * 1024 * 1024;
+const VISION_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+// ── Types ───────────────────────────────────────────────────────
+
+type Msg = { id: string; role: "user" | "bot"; text: string; meta?: string };
+type ChatPayload = { providers?: string; delta?: string; error?: string };
+type UploadState = "idle" | "uploading" | "done" | "error";
+
+type OrbDot = {
+  id: number;
+  cx: number;
+  cy: number;
+  r: number;
+  opacity: number;
+  delay: number;
+};
+
+type FloatingParticle = {
+  id: number;
+  left: number;
+  bottom: number;
+  duration: number;
+  delay: number;
+  size: number;
+};
+
 // ── Helpers ─────────────────────────────────────────────────────
 
 function stripThink(raw: string): string {
@@ -57,57 +85,162 @@ function stripThink(raw: string): string {
   return s.trim();
 }
 
-// ── Voice Hook (mobile-compatible) ─────────────────────────────
+function getReadableError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
+function toApiMessages(messages: Msg[]) {
+  return messages
+    .filter((m) => m.text.trim().length > 0)
+    .slice(-18)
+    .map((m) => ({
+      role: m.role === "bot" ? "assistant" : "user",
+      content: m.text,
+    }));
+}
+
+async function readChatStream(response: Response, onPayload: (payload: ChatPayload) => void) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body returned");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const processEvent = (eventText: string) => {
+    const data = eventText
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+
+    if (!data || data === "[DONE]") return;
+
+    try {
+      onPayload(JSON.parse(data) as ChatPayload);
+    } catch {
+      // Ignore malformed partial payloads. The stream buffer keeps incomplete events.
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() ?? "";
+    for (const event of events) processEvent(event);
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) processEvent(buffer);
+}
+
+function makeOrbDots(): OrbDot[] {
+  return Array.from({ length: 135 }, (_, id) => {
+    const angle = ((id * 137.508) % 360) * (Math.PI / 180);
+    const band = (id % 11) / 10;
+    const radius = 13 + band * 79 + ((id * 17) % 9);
+    const squash = 0.72 + ((id % 5) * 0.045);
+    const cx = 100 + Math.cos(angle) * radius;
+    const cy = 100 + Math.sin(angle) * radius * squash;
+    const edge = Math.hypot(cx - 100, cy - 100) / 92;
+    return {
+      id,
+      cx,
+      cy,
+      r: id % 9 === 0 ? 1.25 : id % 4 === 0 ? 0.9 : 0.65,
+      opacity: Math.max(0.18, 0.82 - edge * 0.44),
+      delay: (id % 17) * 0.13,
+    };
+  }).filter((dot) => Math.hypot(dot.cx - 100, dot.cy - 100) <= 92);
+}
+
+function makeOrbParticles(): FloatingParticle[] {
+  return Array.from({ length: 12 }, (_, id) => ({
+    id,
+    left: 34 + ((id * 13) % 34),
+    bottom: 8 + ((id * 19) % 26),
+    duration: 3.2 + ((id * 7) % 24) / 10,
+    delay: ((id * 11) % 30) / 10,
+    size: 1.2 + ((id * 5) % 14) / 10,
+  }));
+}
+
+function LogoIcon({ className = "" }: { className?: string }) {
+  return (
+    <div className={`rounded-full flex items-center justify-center ${className}`} style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.25)" }}>
+      <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /></svg>
+    </div>
+  );
+}
+
+// ── Voice Hook ──────────────────────────────────────────────────
 
 function useVoice() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState("");
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const listeningRef = useRef(false);
+  const transcriptRef = useRef("");
   const restartCountRef = useRef(0);
 
   useEffect(() => {
+    listeningRef.current = isListening;
+  }, [isListening]);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
       setIsSupported(false);
       return;
     }
-    setIsSupported(true);
 
-    const recognition = new SR();
+    setIsSupported(true);
+    const recognition = new SpeechRecognitionCtor();
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
-    // Mobile browsers need these
     recognition.maxAlternatives = 1;
 
-    recognition.onresult = (e: any) => {
-      const last = e.results[e.results.length - 1];
-      if (!last) return;
-      setTranscript(last[0].transcript);
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const last = event.results[event.results.length - 1];
+      if (!last?.[0]) return;
+      const heard = last[0].transcript;
+      transcriptRef.current = heard;
+      setTranscript(heard);
       if (last.isFinal) {
         setIsListening(false);
+        listeningRef.current = false;
         restartCountRef.current = 0;
       }
     };
 
     recognition.onend = () => {
-      // On mobile, recognition may end prematurely — restart once if we had a final transcript
-      if (isListening && restartCountRef.current < 1 && !transcript) {
-        restartCountRef.current++;
+      if (listeningRef.current && restartCountRef.current < 1 && !transcriptRef.current) {
+        restartCountRef.current += 1;
         try { recognition.start(); } catch {}
         return;
       }
       setIsListening(false);
+      listeningRef.current = false;
       restartCountRef.current = 0;
     };
 
-    recognition.onerror = (e: any) => {
-      console.warn("[voice] error:", e.error);
-      setError(e.error || "unknown");
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.warn("[voice] error:", event.error);
+      setError(event.error || "unknown");
       setIsListening(false);
+      listeningRef.current = false;
       restartCountRef.current = 0;
     };
 
@@ -117,15 +250,17 @@ function useVoice() {
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
+    transcriptRef.current = "";
     setTranscript("");
     setError("");
     setIsListening(true);
+    listeningRef.current = true;
     restartCountRef.current = 0;
-    // Small delay to let previous session end on mobile
-    setTimeout(() => {
-      try { recognitionRef.current?.start(); } catch (e) {
-        console.warn("[voice] start failed:", e);
+    window.setTimeout(() => {
+      try { recognitionRef.current?.start(); } catch (error) {
+        console.warn("[voice] start failed:", error);
         setIsListening(false);
+        listeningRef.current = false;
       }
     }, 100);
   }, []);
@@ -134,6 +269,7 @@ function useVoice() {
     if (!recognitionRef.current) return;
     try { recognitionRef.current.stop(); } catch {}
     setIsListening(false);
+    listeningRef.current = false;
     restartCountRef.current = 0;
   }, []);
 
@@ -143,19 +279,76 @@ function useVoice() {
 // ── TTS Hook ───────────────────────────────────────────────────
 
 function useTTS() {
-  const speak = useCallback((text: string) => {
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const chunks = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-    chunks.forEach((chunk, i) => {
-      const u = new SpeechSynthesisUtterance(chunk.trim());
-      u.lang = "en-US";
-      u.rate = 0.95;
-      u.pitch = 1.0;
-      if (i > 0) u.onstart = () => {};
-      window.speechSynthesis.speak(u);
-    });
+
+    const loadVoices = () => {
+      voicesRef.current = window.speechSynthesis.getVoices();
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      if (window.speechSynthesis.onvoiceschanged === loadVoices) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
   }, []);
+
+  const chooseClearVoice = useCallback(() => {
+    const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
+    const englishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("en"));
+    const preferredNames = [
+      "microsoft aria",
+      "microsoft jenny",
+      "google us english",
+      "google uk english female",
+      "samantha",
+      "daniel",
+      "alex",
+      "zira",
+      "david",
+    ];
+
+    for (const preferred of preferredNames) {
+      const match = englishVoices.find((voice) => voice.name.toLowerCase().includes(preferred));
+      if (match) return match;
+    }
+
+    return englishVoices.find((voice) => voice.localService) || englishVoices[0] || voices[0] || null;
+  }, []);
+
+  const speak = useCallback((text: string, onDone?: () => void) => {
+    if (typeof window === "undefined" || !window.speechSynthesis || !text.trim()) {
+      onDone?.();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/\s+/g, " ").trim();
+    const chunks = cleanText.match(/.{1,220}(?:[.!?]\s|,\s|\s|$)/g)?.map((chunk) => chunk.trim()).filter(Boolean) || [cleanText];
+    const voice = chooseClearVoice();
+    let remaining = chunks.length;
+
+    const finishChunk = () => {
+      remaining -= 1;
+      if (remaining <= 0) onDone?.();
+    };
+
+    chunks.forEach((chunk) => {
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      utterance.lang = voice?.lang || "en-US";
+      utterance.voice = voice;
+      utterance.rate = 0.9;
+      utterance.pitch = 1.03;
+      utterance.volume = 1;
+      utterance.onend = finishChunk;
+      utterance.onerror = finishChunk;
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [chooseClearVoice]);
 
   const stop = useCallback(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -170,32 +363,50 @@ function useTTS() {
 
 function useOrbSize() {
   const [size, setSize] = useState(220);
+
   useEffect(() => {
     const update = () => {
-      const w = window.innerWidth;
-      if (w < 380) setSize(140);
-      else if (w < 640) setSize(160);
-      else if (w < 768) setSize(180);
-      else if (w < 1024) setSize(200);
-      else setSize(220);
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const minSide = Math.min(width, height);
+
+      if (width < 380 || height < 620) setSize(Math.max(128, Math.min(158, minSide * 0.35)));
+      else if (width < 640) setSize(Math.max(150, Math.min(188, minSide * 0.42)));
+      else if (width < 768) setSize(190);
+      else if (width < 1024) setSize(Math.min(220, Math.max(180, minSide * 0.36)));
+      else if (width < 1280) setSize(Math.min(230, Math.max(190, minSide * 0.32)));
+      else setSize(Math.min(270, Math.max(220, minSide * 0.34)));
     };
+
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
   }, []);
+
   return size;
 }
 
-// ── Stars ───────────────────────────────────────────────────────
+// ── Background ──────────────────────────────────────────────────
 
 function Stars() {
-  const data = useRef(Array.from({ length: 60 }, (_, i) => ({
-    id: i, x: Math.random() * 100, y: Math.random() * 100,
-    s: 1 + Math.random() * 2, d: 2 + Math.random() * 4, dl: Math.random() * 3,
+  const data = useRef(Array.from({ length: 80 }, (_, i) => ({
+    id: i,
+    x: (i * 37) % 100,
+    y: (i * 61) % 100,
+    s: 1 + ((i * 11) % 18) / 10,
+    d: 2 + ((i * 13) % 40) / 10,
+    dl: ((i * 17) % 30) / 10,
   }))).current;
+
   return (
-    <div className="starfield">
-      {data.map(s => <div key={s.id} className="star" style={{ left: `${s.x}%`, top: `${s.y}%`, width: s.s, height: s.s, animationDuration: `${s.d}s`, animationDelay: `${s.dl}s` }} />)}
+    <div className="starfield" aria-hidden="true">
+      {data.map((star) => (
+        <div key={star.id} className="star" style={{ left: `${star.x}%`, top: `${star.y}%`, width: star.s, height: star.s, animationDuration: `${star.d}s`, animationDelay: `${star.dl}s` }} />
+      ))}
     </div>
   );
 }
@@ -204,7 +415,7 @@ function Stars() {
 
 function MathDiagram() {
   return (
-    <div className="math-diagram">
+    <div className="math-diagram" aria-hidden="true">
       <svg width="100%" height="100%" viewBox="0 0 300 100" preserveAspectRatio="xMidYMid meet">
         <line x1="40" y1="90" x2="280" y2="90" stroke="rgba(0,212,255,0.3)" strokeWidth="1" />
         <line x1="40" y1="90" x2="40" y2="10" stroke="rgba(0,212,255,0.3)" strokeWidth="1" />
@@ -222,94 +433,96 @@ function MathDiagram() {
   );
 }
 
-// ── Face — JARVIS Arc Reactor Style ────────────────────────────
+// ── Orb Face ────────────────────────────────────────────────────
 
-function FuturisticFace({ isListening, isSpeaking }: { isListening: boolean; isSpeaking: boolean }) {
-  const c = isListening ? "#00ffcc" : isSpeaking ? "#22d3ee" : "#00d4ff";
-  const eyeOp = isListening ? 1 : isSpeaking ? 0.9 : 0.8;
+function PixelConstellation({ accent }: { accent: string }) {
+  const dots = useMemo(makeOrbDots, []);
+  const clipId = useId().replace(/:/g, "");
 
   return (
-    <svg viewBox="0 0 200 200" width="100%" height="100%" className="absolute inset-0" style={{ pointerEvents: "none" }}>
-      <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <filter id="glowSm" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <radialGradient id="eyeGlow" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#fff" stopOpacity="0.95" />
-          <stop offset="30%" stopColor={c} stopOpacity="0.8" />
-          <stop offset="100%" stopColor={c} stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id="plateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor={c} stopOpacity="0.08" />
-          <stop offset="100%" stopColor={c} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-
-      <path d="M100 30 C135 30 158 50 162 80 C164 95 158 112 148 125 L135 135 C122 143 112 148 100 148 C88 148 78 143 65 135 L52 125 C42 112 36 95 38 80 C42 50 65 30 100 30 Z"
-        fill="url(#plateGrad)" stroke={c} strokeWidth="0.6" opacity="0.25" />
-      <path d="M65 52 L100 40 L135 52" fill="none" stroke={c} strokeWidth="0.5" opacity="0.2" />
-      <path d="M70 56 L100 46 L130 56" fill="none" stroke={c} strokeWidth="0.3" opacity="0.1" />
-      <circle cx="100" cy="38" r="2.5" fill={c} opacity={isListening ? 0.8 : 0.35} filter="url(#glowSm)" />
-
-      <path d="M56 78 L68 72 L96 72 L104 82 L104 92 L96 100 L68 100 L56 92 Z" fill={c} opacity={eyeOp * 0.12} />
-      <path d="M60 80 L70 75 L94 75 L102 82 L102 90 L94 97 L70 97 L60 90 Z" fill={c} opacity={eyeOp * 0.5} filter="url(#glow)" />
-      <ellipse cx="80" cy="86" rx="16" ry="6" fill="url(#eyeGlow)" opacity={eyeOp} filter="url(#glow)" />
-      <line x1="64" y1="86" x2="98" y2="86" stroke="#fff" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
-
-      <path d="M144 78 L132 72 L104 72 L96 82 L96 92 L104 100 L132 100 L144 92 Z" fill={c} opacity={eyeOp * 0.12} />
-      <path d="M140 80 L130 75 L106 75 L98 82 L98 90 L106 97 L130 97 L140 90 Z" fill={c} opacity={eyeOp * 0.5} filter="url(#glow)" />
-      <ellipse cx="120" cy="86" rx="16" ry="6" fill="url(#eyeGlow)" opacity={eyeOp} filter="url(#glow)" />
-      <line x1="102" y1="86" x2="136" y2="86" stroke="#fff" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
-
-      <path d="M97 92 L100 104 L103 92" fill="none" stroke={c} strokeWidth="0.5" opacity="0.15" />
-      <path d="M72 116 L82 113 L92 116 L100 113 L108 116 L118 113 L128 116"
-        fill="none" stroke={c} strokeWidth="1.5" opacity={isSpeaking ? 0.8 : isListening ? 0.6 : 0.35} strokeLinecap="round" />
-      <path d="M78 119 L88 117 L98 119 L100 117 L102 119 L112 117 L122 119"
-        fill="none" stroke={c} strokeWidth="0.5" opacity={isSpeaking ? 0.4 : 0.15} strokeLinecap="round" />
-      <path d="M52 82 L60 76 L66 82 L64 96 L54 100" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
-      <path d="M148 82 L140 76 L134 82 L136 96 L146 100" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
-      <path d="M75 136 L100 145 L125 136" fill="none" stroke={c} strokeWidth="0.4" opacity="0.12" />
-      <circle cx="50" cy="72" r="1" fill={c} opacity="0.2" />
-      <circle cx="150" cy="72" r="1" fill={c} opacity="0.2" />
-      <circle cx="48" cy="100" r="0.8" fill={c} opacity="0.15" />
-      <circle cx="152" cy="100" r="0.8" fill={c} opacity="0.15" />
+    <svg viewBox="0 0 200 200" width="100%" height="100%" className="absolute inset-0 orb-pixel-map" aria-hidden="true">
+      <clipPath id={`${clipId}-orbClip`}>
+        <circle cx="100" cy="100" r="96" />
+      </clipPath>
+      <g clipPath={`url(#${clipId}-orbClip)`}>
+        {dots.map((dot) => (
+          <circle key={dot.id} cx={dot.cx} cy={dot.cy} r={dot.r} fill={accent} opacity={dot.opacity} style={{ animationDelay: `${dot.delay}s` }} />
+        ))}
+      </g>
     </svg>
   );
 }
 
-// ── Orb ─────────────────────────────────────────────────────────
+function FuturisticFace({ isListening, isSpeaking }: { isListening: boolean; isSpeaking: boolean }) {
+  const id = useId().replace(/:/g, "");
+  const accent = isListening ? "#00ffcc" : isSpeaking ? "#38e8ff" : "#7ae8ff";
+  const eyeOpacity = isListening ? 1 : isSpeaking ? 0.96 : 0.88;
+
+  return (
+    <svg viewBox="0 0 200 200" width="100%" height="100%" className="absolute inset-0 orb-face" style={{ pointerEvents: "none" }} aria-hidden="true">
+      <defs>
+        <filter id={`${id}-softGlow`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <filter id={`${id}-eyeGlow`} x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <linearGradient id={`${id}-plate`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.18" />
+          <stop offset="45%" stopColor={accent} stopOpacity="0.09" />
+          <stop offset="100%" stopColor="#020617" stopOpacity="0.12" />
+        </linearGradient>
+        <radialGradient id={`${id}-eyeCore`} cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+          <stop offset="34%" stopColor="#cfffff" stopOpacity="0.95" />
+          <stop offset="64%" stopColor={accent} stopOpacity="0.65" />
+          <stop offset="100%" stopColor={accent} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <path d="M100 26 C130 26 153 45 160 74 C165 97 158 118 143 135 C130 149 114 157 100 157 C86 157 70 149 57 135 C42 118 35 97 40 74 C47 45 70 26 100 26 Z" fill={`url(#${id}-plate)`} stroke={accent} strokeWidth="0.8" opacity="0.32" />
+      <path d="M100 32 L135 48 L145 73 L137 103 L124 116 H76 L63 103 L55 73 L65 48 Z" fill="rgba(1, 16, 42, 0.22)" stroke={accent} strokeWidth="0.55" opacity="0.5" />
+      <path d="M64 50 L46 69 L44 98 L58 121 M136 50 L154 69 L156 98 L142 121" fill="none" stroke="#dffcff" strokeWidth="0.6" opacity="0.33" />
+      <path d="M71 45 L100 35 L129 45 M66 58 L100 47 L134 58" fill="none" stroke={accent} strokeWidth="0.6" opacity="0.22" />
+      <path d="M59 80 L71 72 H94 L105 83 L99 96 H69 L56 90 Z" fill={accent} opacity="0.2" filter={`url(#${id}-softGlow)`} />
+      <path d="M141 80 L129 72 H106 L95 83 L101 96 H131 L144 90 Z" fill={accent} opacity="0.2" filter={`url(#${id}-softGlow)`} />
+      <ellipse cx="80" cy="85" rx="24" ry="12" fill={`url(#${id}-eyeCore)`} opacity={eyeOpacity} filter={`url(#${id}-eyeGlow)`} />
+      <ellipse cx="120" cy="85" rx="24" ry="12" fill={`url(#${id}-eyeCore)`} opacity={eyeOpacity} filter={`url(#${id}-eyeGlow)`} />
+      <rect x="63" y="82" width="35" height="5" rx="2.5" fill="#ffffff" opacity="0.48" />
+      <rect x="102" y="82" width="35" height="5" rx="2.5" fill="#ffffff" opacity="0.48" />
+      <path d="M91 98 L100 108 L109 98" fill="none" stroke={accent} strokeWidth="0.65" opacity="0.34" />
+      <path d="M69 116 L83 112 L96 116 H104 L117 112 L131 116" fill="none" stroke={accent} strokeWidth="1.25" opacity={isSpeaking ? 0.85 : isListening ? 0.64 : 0.4} strokeLinecap="round" filter={`url(#${id}-softGlow)`} />
+      <path d="M75 129 L91 138 H109 L125 129" fill="none" stroke="#eaffff" strokeWidth="0.6" opacity="0.22" />
+      <path d="M73 135 C85 146 115 146 127 135" fill="none" stroke={accent} strokeWidth="0.5" opacity="0.14" />
+      <circle cx="100" cy="36" r="2.4" fill={accent} opacity={isListening ? 0.9 : 0.42} filter={`url(#${id}-softGlow)`} />
+    </svg>
+  );
+}
 
 function OrbHero({ isListening, isSpeaking, orbSize }: { isListening: boolean; isSpeaking: boolean; orbSize: number }) {
+  const particles = useMemo(makeOrbParticles, []);
+  const accent = isListening ? "#00ffcc" : isSpeaking ? "#38e8ff" : "#7ae8ff";
   const ring1 = orbSize + 30;
   const ring2 = orbSize + 50;
   const glowSize = orbSize + 100;
 
   return (
-    <div style={{ position: "relative", width: ring2, height: ring2, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ position: "absolute", width: glowSize, height: glowSize, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,212,255,0.25) 0%, rgba(139,92,246,0.12) 40%, transparent 70%)", filter: "blur(30px)", animation: "orbPulse 3s ease-in-out infinite" }} />
-      <div style={{ position: "absolute", width: ring1, height: ring1, borderRadius: "50%", border: "1px solid rgba(0,212,255,0.12)", borderTopColor: "rgba(0,212,255,0.35)", animation: "spin 10s linear infinite" }} />
-      <div style={{ position: "absolute", width: ring2, height: ring2, borderRadius: "50%", border: "1px solid rgba(139,92,246,0.08)", borderBottomColor: "rgba(139,92,246,0.2)", animation: "spin 15s linear infinite reverse" }} />
-      {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="orb-particle" style={{
-          left: `${40 + Math.random() * 20}%`, bottom: `${10 + Math.random() * 20}%`,
-          animationDuration: `${3 + Math.random() * 3}s`, animationDelay: `${Math.random() * 4}s`,
-          width: 1 + Math.random() * 2, height: 1 + Math.random() * 2,
-        }} />
+    <div className="orb-stage" style={{ width: ring2, height: ring2 }}>
+      <div className="orb-aura" style={{ width: glowSize, height: glowSize }} />
+      <div className="orb-ring orb-ring--one" style={{ width: ring1, height: ring1 }} />
+      <div className="orb-ring orb-ring--two" style={{ width: ring2, height: ring2 }} />
+      {particles.map((particle) => (
+        <div key={particle.id} className="orb-particle" style={{ left: `${particle.left}%`, bottom: `${particle.bottom}%`, animationDuration: `${particle.duration}s`, animationDelay: `${particle.delay}s`, width: particle.size, height: particle.size }} />
       ))}
-      <motion.div style={{
-        position: "relative", width: orbSize, height: orbSize, borderRadius: "50%",
-        background: "radial-gradient(circle at 35% 30%, rgba(0,212,255,0.15) 0%, rgba(88,28,135,0.2) 30%, rgba(0,50,120,0.3) 60%, rgba(6,11,24,0.9) 100%)",
-        border: "1.5px solid rgba(0,212,255,0.25)",
-        boxShadow: "0 0 40px rgba(0,212,255,0.15), 0 0 80px rgba(139,92,246,0.1), inset 0 0 40px rgba(0,212,255,0.05)",
-        display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
-      }}
-        animate={isListening ? { scale: [1, 1.03, 1] } : isSpeaking ? { scale: [1, 1.015, 1] } : {}}
-        transition={{ duration: isListening ? 1.5 : 2, repeat: Infinity, ease: "easeInOut" }}>
+      <motion.div
+        className="orb-sphere"
+        style={{ width: orbSize, height: orbSize }}
+        animate={isListening ? { scale: [1, 1.035, 1] } : isSpeaking ? { scale: [1, 1.018, 1] } : { scale: 1 }}
+        transition={{ duration: isListening ? 1.4 : 2.2, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <PixelConstellation accent={accent} />
         <FuturisticFace isListening={isListening} isSpeaking={isSpeaking} />
       </motion.div>
     </div>
@@ -320,21 +533,19 @@ function OrbHero({ isListening, isSpeaking, orbSize }: { isListening: boolean; i
 
 function VoicePanel({ onVoiceSend }: { onVoiceSend: (text: string) => void }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-3">
-      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.2)" }}>
+    <div className="tab-panel-content">
+      <div className="feature-icon feature-icon--voice">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
           <path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" />
         </svg>
       </div>
-      <div style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 12, color: "var(--text-bright)", letterSpacing: 2 }}>Voice Command</div>
-      <div className="p-2 rounded-lg w-full" style={{ background: "rgba(0,212,255,0.04)", border: "1px solid rgba(0,212,255,0.12)" }}>
-        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "var(--text)", opacity: 0.4, marginBottom: 4 }}>Try saying:</div>
-        {["Explain quadratic equations", "Quiz me on trigonometry", "Show me a diagram"].map((c, i) => (
-          <button key={i} onClick={() => onVoiceSend(c)}
-            className="px-2 py-1 rounded mb-1 w-full text-left transition-all hover:bg-cyan-400/10"
-            style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--primary)", opacity: 0.6, background: "rgba(0,212,255,0.04)" }}>
-            &ldquo;{c}&rdquo;
+      <div className="panel-title">Voice Command</div>
+      <div className="hint-box">
+        <div className="hint-label">Try saying:</div>
+        {["Explain quadratic equations", "Quiz me on trigonometry", "Show me a diagram"].map((command) => (
+          <button key={command} type="button" onClick={() => onVoiceSend(command)} className="hint-command">
+            “{command}”
           </button>
         ))}
       </div>
@@ -342,36 +553,72 @@ function VoicePanel({ onVoiceSend }: { onVoiceSend: (text: string) => void }) {
   );
 }
 
-function UploadPanel() {
+function UploadPanel({ onVisionSend }: { onVisionSend: (file: File) => Promise<void> }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [status, setStatus] = useState<UploadState>("idle");
+  const [message, setMessage] = useState("Upload a question, diagram, or worksheet image.");
+
+  const handleUpload = useCallback(async (file: File | undefined) => {
+    if (!file) return;
+
+    if (!VISION_TYPES.has(file.type)) {
+      setStatus("error");
+      setMessage("Only JPG, PNG, and WebP files are supported.");
+      return;
+    }
+
+    if (file.size > MAX_VISION_BYTES) {
+      setStatus("error");
+      setMessage("Please upload an image up to 10 MB.");
+      return;
+    }
+
+    setStatus("uploading");
+    setMessage(`Analyzing ${file.name}...`);
+
+    try {
+      await onVisionSend(file);
+      setStatus("done");
+      setMessage("Image analyzed. Open Chat to view the answer.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(getReadableError(error, "Vision analysis failed."));
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }, [onVisionSend]);
+
   return (
-    <div className="flex flex-col items-center gap-3 py-3">
-      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.2)" }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="1.5">
+    <div className="tab-panel-content">
+      <div className="feature-icon feature-icon--vision">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" strokeWidth="1.5">
           <path d="M7 16a4 4 0 0 1-.88-7.903A5 5 0 1 1 15.9 6L16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
         </svg>
       </div>
-      <div style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 12, color: "var(--text-bright)", letterSpacing: 2 }}>Upload Image</div>
-      <button className="px-4 py-1.5 rounded-lg text-xs transition-all" style={{ fontFamily: "'Orbitron', sans-serif", letterSpacing: 1, background: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.3)", color: "#c084fc" }}>
-        Choose File
+      <div className="panel-title">Vision Upload</div>
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event: ChangeEvent<HTMLInputElement>) => void handleUpload(event.target.files?.[0])} />
+      <button type="button" disabled={status === "uploading"} onClick={() => inputRef.current?.click()} className="upload-btn">
+        {status === "uploading" ? "Analyzing..." : "Choose File"}
       </button>
-      <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#c084fc", opacity: 0.5 }}>JPG, PNG, WEBP &mdash; Max 10MB</div>
+      <div className="upload-status" data-state={status}>{message}</div>
+      <div className="hint-label">JPG, PNG, WEBP — Max 10MB</div>
     </div>
   );
 }
 
 function SchedulePanel() {
   return (
-    <div className="flex flex-col gap-1.5">
-      <h3 style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, color: "var(--primary)", letterSpacing: 2, marginBottom: 2 }}>Today&apos;s Schedule</h3>
-      {SCHEDULE.map((s, i) => (
-        <div key={i} className={`flex items-center gap-2 p-1.5 rounded-lg ${s.done ? "opacity-45" : s.active ? "ring-1 ring-cyan-400/30 bg-cyan-400/5" : ""}`}>
-          <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--primary)", minWidth: 36 }}>{s.time}</span>
-          <div className="flex-1 min-w-0">
-            <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 12, color: "var(--text-bright)", fontWeight: 600 }}>{s.subject}</div>
-            <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "var(--text)", opacity: 0.4 }}>{s.topic}</div>
+    <div className="panel-list">
+      <h3 className="panel-heading">Today&apos;s Schedule</h3>
+      {SCHEDULE.map((item) => (
+        <div key={`${item.time}-${item.subject}`} className={`schedule-row ${item.done ? "opacity-45" : item.active ? "schedule-row--active" : ""}`}>
+          <span className="schedule-time">{item.time}</span>
+          <div className="min-w-0 flex-1">
+            <div className="schedule-subject">{item.subject}</div>
+            <div className="schedule-topic">{item.topic}</div>
           </div>
-          {s.done && <span style={{ fontSize: 10, color: "#22c55e" }}>✓</span>}
-          {s.active && <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />}
+          {item.done && <span className="status-done">✓</span>}
+          {item.active && <span className="status-active" />}
         </div>
       ))}
     </div>
@@ -380,21 +627,22 @@ function SchedulePanel() {
 
 function ProgressPanel() {
   const avg = Math.round(SUBJECTS.reduce((a, b) => a + b.pct, 0) / SUBJECTS.length);
+
   return (
-    <div className="flex flex-col gap-2">
-      <h3 style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, color: "var(--primary)", letterSpacing: 2, marginBottom: 2 }}>Progress Report</h3>
-      {SUBJECTS.map((s, i) => (
-        <div key={i}>
-          <div className="flex justify-between mb-0.5">
-            <span style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 11, color: "var(--text-bright)" }}>{s.name}</span>
-            <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: s.color }}>{s.pct}%</span>
+    <div className="panel-list">
+      <h3 className="panel-heading">Progress Report</h3>
+      {SUBJECTS.map((subject) => (
+        <div key={subject.name}>
+          <div className="progress-title-row">
+            <span>{subject.name}</span>
+            <span style={{ color: subject.color }}>{subject.pct}%</span>
           </div>
-          <div className="progress-track"><div className="progress-fill" style={{ width: `${s.pct}%`, background: s.color }} /></div>
+          <div className="progress-track"><div className="progress-fill" style={{ width: `${subject.pct}%`, background: subject.color }} /></div>
         </div>
       ))}
-      <div className="p-2 rounded-lg mt-1" style={{ background: "rgba(0,212,255,0.04)", border: "1px solid rgba(0,212,255,0.12)" }}>
-        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "var(--text)", opacity: 0.4 }}>Overall Average</div>
-        <div style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 20, color: "var(--primary)" }}>{avg}%</div>
+      <div className="overall-card">
+        <div className="hint-label">Overall Average</div>
+        <div className="overall-value">{avg}%</div>
       </div>
     </div>
   );
@@ -402,26 +650,24 @@ function ProgressPanel() {
 
 function SyllabusPanel() {
   return (
-    <div className="flex flex-col gap-0.5">
-      <h3 style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, color: "var(--primary)", letterSpacing: 2, marginBottom: 2 }}>CBSE Class 9 — Math</h3>
-      {CHAPTERS.map((ch, i) => (
-        <div key={i} className={`flex items-center gap-2 p-1 rounded-lg ${ch.status === "locked" ? "opacity-35" : ""}`}>
-          <div className={`w-4 h-4 rounded flex items-center justify-center text-[8px] shrink-0 ${
-            ch.status === "done" ? "bg-green-500/20 text-green-400" : ch.status === "active" ? "bg-cyan-400/20 text-cyan-400" : "bg-gray-600/20 text-gray-500"
-          }`}>
-            {ch.status === "done" ? "✓" : ch.status === "active" ? "▶" : "🔒"}
+    <div className="panel-list panel-list--tight">
+      <h3 className="panel-heading">CBSE Class 9 — Math</h3>
+      {CHAPTERS.map((chapter, index) => (
+        <div key={chapter.title} className={`chapter-row ${chapter.status === "locked" ? "opacity-35" : ""}`}>
+          <div className={`chapter-badge chapter-badge--${chapter.status}`}>
+            {chapter.status === "done" ? "✓" : chapter.status === "active" ? "▶" : "🔒"}
           </div>
-          <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 11, color: "var(--text-bright)", fontWeight: 600 }}>Ch {i + 1}: {ch.title}</div>
+          <div className="chapter-title">Ch {index + 1}: {chapter.title}</div>
         </div>
       ))}
     </div>
   );
 }
 
-function PanelForTab({ tab, onVoiceSend }: { tab: string; onVoiceSend: (text: string) => void }) {
+function PanelForTab({ tab, onVoiceSend, onVisionSend }: { tab: string; onVoiceSend: (text: string) => void; onVisionSend: (file: File) => Promise<void> }) {
   switch (tab) {
     case "voice": return <VoicePanel onVoiceSend={onVoiceSend} />;
-    case "upload": return <UploadPanel />;
+    case "upload": return <UploadPanel onVisionSend={onVisionSend} />;
     case "schedule": return <SchedulePanel />;
     case "progress": return <ProgressPanel />;
     case "syllabus": return <SyllabusPanel />;
@@ -432,63 +678,79 @@ function PanelForTab({ tab, onVoiceSend }: { tab: string; onVoiceSend: (text: st
 // ── Chat Panel Component ───────────────────────────────────────
 
 function ChatPanel({
-  messages, input, setInput, send, onKey, endRef, providerInfo, progress, isCompact
+  messages,
+  input,
+  setInput,
+  send,
+  onKey,
+  endRef,
+  providerInfo,
+  progress,
+  isCompact,
 }: {
-  messages: Msg[]; input: string; setInput: (v: string) => void; send: () => void;
-  onKey: (e: React.KeyboardEvent) => void; endRef: React.RefObject<HTMLDivElement | null>;
-  providerInfo: string; progress: number; isCompact?: boolean;
+  messages: Msg[];
+  input: string;
+  setInput: (value: string) => void;
+  send: () => void;
+  onKey: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  endRef: RefObject<HTMLDivElement | null>;
+  providerInfo: string;
+  progress: number;
+  isCompact?: boolean;
 }) {
   return (
-    <>
-      <div className={`flex items-center justify-between shrink-0 ${isCompact ? "px-3 py-2" : "px-4 py-3"}`} style={{ borderBottom: "1px solid var(--glass-border)" }}>
-        <div>
-          <div style={{ fontFamily: "'Orbitron', sans-serif", fontSize: isCompact ? 11 : 12, fontWeight: 700, color: "var(--text-bright)", letterSpacing: 1 }}>EduOrb – AI Tutor</div>
-          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "var(--primary)", opacity: 0.5, marginTop: 1 }}>{providerInfo || "NCERT · Online"}</div>
+    <section className="chat-panel-root">
+      <header className={`chat-header ${isCompact ? "chat-header--compact" : ""}`}>
+        <div className="min-w-0">
+          <div className="chat-title">EduOrb – AI Tutor</div>
+          <div className="chat-provider truncate">{providerInfo || "NCERT · Online"}</div>
         </div>
-        <div className="text-right">
-          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 8, color: "var(--primary)", letterSpacing: 1 }}>Class 9 CBSE</div>
-          <div className="progress-track mt-1" style={{ width: 60 }}><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
+        <div className="chat-class">
+          <div>Class 9 CBSE</div>
+          <div className="progress-track mt-1"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
         </div>
-      </div>
-      <div className={`flex-1 overflow-y-auto flex flex-col gap-2 ${isCompact ? "px-3 py-2" : "px-4 py-3"}`}>
-        {messages.map(m => (
-          <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`chat-bubble ${m.role === "user" ? "chat-bubble--user" : "chat-bubble--bot"}`}>
-              {m.text || <span className="inline-block w-1.5 h-4 bg-cyan-400/50 animate-pulse rounded-sm" />}
+      </header>
+
+      <div className={`chat-scroll ${isCompact ? "chat-scroll--compact" : ""}`} aria-live="polite">
+        {messages.map((message) => (
+          <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`chat-bubble ${message.role === "user" ? "chat-bubble--user" : "chat-bubble--bot"}`}>
+              {message.meta && <div className="message-meta">{message.meta}</div>}
+              {message.text || <span className="typing-cursor" />}
             </div>
           </div>
         ))}
         <div ref={endRef} />
       </div>
-      {!isCompact && <div className="px-4 pb-2 shrink-0"><MathDiagram /></div>}
-      <div className={`shrink-0 ${isCompact ? "px-3 py-2" : "px-4 py-2"}`} style={{ borderTop: "1px solid var(--glass-border)" }}>
-        <div className="flex items-center gap-2">
-          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
-            placeholder="Ask EduOrb anything..." className="chat-input flex-1" style={{ fontSize: isCompact ? 13 : 14 }} />
-          <button onClick={send} disabled={!input.trim()} className="px-3 py-2 rounded-lg text-xs font-semibold transition-all shrink-0"
-            style={{ fontFamily: "'Orbitron', sans-serif", letterSpacing: 1,
-              background: input.trim() ? "rgba(0,212,255,0.15)" : "transparent",
-              border: `1px solid ${input.trim() ? "rgba(0,212,255,0.4)" : "var(--glass-border)"}`,
-              color: input.trim() ? "var(--primary)" : "rgba(200,214,229,0.3)", cursor: input.trim() ? "pointer" : "not-allowed" }}>
+
+      {!isCompact && <div className="chat-diagram-wrap"><MathDiagram /></div>}
+
+      <footer className={`chat-input-wrap ${isCompact ? "chat-input-wrap--compact" : ""}`}>
+        <div className="chat-input-row">
+          <textarea
+            value={input}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
+            onKeyDown={onKey}
+            placeholder="Ask EduOrb anything..."
+            className="chat-input flex-1"
+            rows={1}
+          />
+          <button type="button" onClick={send} disabled={!input.trim()} className="send-btn">
             Send
           </button>
         </div>
-      </div>
-    </>
+      </footer>
+    </section>
   );
 }
 
 // ── Main ────────────────────────────────────────────────────────
 
-type Msg = { id: string; role: "user" | "bot"; text: string };
-
 export default function SessionSetup() {
   const [activeTab, setActiveTab] = useState("voice");
   const [input, setInput] = useState("");
   const [providerInfo, setProviderInfo] = useState("");
-  const [messages, setMessages] = useState<Msg[]>(
-    SEED_MESSAGES.map((m, i) => ({ id: String(i), ...m }))
-  );
+  const [messages, setMessages] = useState<Msg[]>(SEED_MESSAGES.map((message, index) => ({ id: String(index), ...message })));
   const [progress] = useState(92);
   const [showChat, setShowChat] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -498,248 +760,248 @@ export default function SessionSetup() {
   const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening } = useVoice();
   const { speak: ttsSpeak, stop: ttsStop } = useTTS();
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  // When voice transcript arrives, send it as a message
   useEffect(() => {
-    if (transcript && !isListening) {
-      setInput(transcript);
-      const t = setTimeout(() => {
-        if (transcript.trim()) {
-          setInput("");
-          sendMsg(transcript.trim());
-        }
-      }, 300);
-      return () => clearTimeout(t);
-    }
-  }, [isListening, transcript]);
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages]);
 
-  const sendMsg = useCallback(async (txt: string) => {
-    if (!txt.trim()) return;
+  const sendMsg = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const userMessage: Msg = { id: crypto.randomUUID(), role: "user", text: trimmed };
     const botId = crypto.randomUUID();
-    const next: Msg[] = [
-      ...messages,
-      { id: crypto.randomUUID(), role: "user", text: txt },
-      { id: botId, role: "bot", text: "" },
-    ];
-    setMessages(next);
+    const visibleMessages = [...messages, userMessage];
+    const displayMessages: Msg[] = [...visibleMessages, { id: botId, role: "bot", text: "" }];
+
+    setMessages(displayMessages);
+    setShowChat(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map(m => ({ role: m.role === "bot" ? "assistant" : m.role, content: m.text })) }),
+        body: JSON.stringify({ messages: toApiMessages(visibleMessages) }),
       });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("no body");
-      const dec = new TextDecoder();
+
+      if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
+
       let raw = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = dec.decode(value, { stream: true });
-        for (const line of chunk.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          const json = line.slice(6).trim();
-          if (json === "[DONE]") continue;
-          try {
-            const p = JSON.parse(json);
-            if (p.providers) setProviderInfo(p.providers);
-            if (p.delta) {
-              raw += p.delta;
-              const clean = stripThink(raw);
-              setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: clean } : m));
-            }
-          } catch {}
+      await readChatStream(response, (payload) => {
+        if (payload.providers) setProviderInfo(payload.providers);
+        if (payload.error) throw new Error(payload.error);
+        if (payload.delta) {
+          raw += payload.delta;
+          const clean = stripThink(raw);
+          setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: clean } : message));
         }
-      }
+      });
+
       const finalClean = stripThink(raw);
       if (finalClean) {
-        setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: finalClean } : m));
+        setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: finalClean } : message));
         setIsSpeaking(true);
-        ttsSpeak(finalClean);
-        setTimeout(() => setIsSpeaking(false), 2000);
+        ttsSpeak(finalClean, () => setIsSpeaking(false));
       } else {
-        setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: "I couldn't generate a response. Please try again." } : m));
+        setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: "I couldn't generate a response. Please try again." } : message));
       }
-    } catch {
-      setMessages(prev => prev.map(m => m.id === botId ? { ...m, text: "AI unavailable. Please try again." } : m));
+    } catch (error) {
+      setIsSpeaking(false);
+      setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: getReadableError(error, "AI unavailable. Please try again.") } : message));
     }
   }, [messages, ttsSpeak]);
 
+  const handleVisionUpload = useCallback(async (file: File) => {
+    const userId = crypto.randomUUID();
+    const botId = crypto.randomUUID();
+
+    setMessages((previous) => [
+      ...previous,
+      { id: userId, role: "user", text: `Uploaded image: ${file.name}`, meta: "Vision request" },
+      { id: botId, role: "bot", text: "" },
+    ]);
+    setShowChat(true);
+
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("prompt", "Analyze this uploaded educational image. Explain the solution clearly, step by step, and keep the answer student-friendly.");
+
+    const response = await fetch("/api/vision", { method: "POST", body: formData });
+    const data = await response.json().catch(() => ({} as { answer?: string; provider?: string; error?: string }));
+
+    if (!response.ok) {
+      const message = typeof data.error === "string" ? data.error : `Vision request failed (${response.status})`;
+      setMessages((previous) => previous.map((item) => item.id === botId ? { ...item, text: message } : item));
+      throw new Error(message);
+    }
+
+    const answer = stripThink(typeof data.answer === "string" && data.answer.trim() ? data.answer : "No answer returned from vision provider.");
+    if (typeof data.provider === "string" && data.provider.trim()) {
+      setProviderInfo(`Vision: ${data.provider}`);
+    }
+    setMessages((previous) => previous.map((item) => item.id === botId ? { ...item, text: answer } : item));
+  }, []);
+
+  useEffect(() => {
+    if (transcript && !isListening) {
+      setInput(transcript);
+      const timer = window.setTimeout(() => {
+        const finalTranscript = transcript.trim();
+        if (finalTranscript) {
+          setInput("");
+          void sendMsg(finalTranscript);
+        }
+      }, 300);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [isListening, sendMsg, transcript]);
+
   const send = useCallback(() => {
-    const txt = input.trim();
-    if (!txt) return;
+    const trimmed = input.trim();
+    if (!trimmed) return;
     setInput("");
-    sendMsg(txt);
+    void sendMsg(trimmed);
   }, [input, sendMsg]);
 
-  const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+  const onKey = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  }, [send]);
 
   const toggleVoice = useCallback(() => {
     if (isListening) {
       stopListening();
     } else {
       ttsStop();
+      setIsSpeaking(false);
       startListening();
     }
   }, [isListening, startListening, stopListening, ttsStop]);
 
+  const openTab = useCallback((tab: string, shouldShowChat = false) => {
+    setActiveTab(tab);
+    setShowChat(shouldShowChat);
+  }, []);
+
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="app-root">
       <div className="cosmos" /><Stars />
       <div className="nebula-glow nebula-glow--purple" />
       <div className="nebula-glow nebula-glow--blue" />
       <div className="nebula-glow nebula-glow--cyan" />
 
-      {/* ══ DESKTOP lg+ ══ 3-column: sidebar | center | chat */}
-      <div className="relative z-10 hidden lg:flex h-full" style={{ padding: 12, gap: 12 }}>
-        {/* Sidebar */}
-        <aside className="glass flex flex-col shrink-0 p-3" style={{ width: 200 }}>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.25)" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /></svg>
-            </div>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 12, fontWeight: 700, color: "var(--text-bright)", letterSpacing: 2 }}>EduOrb</span>
+      {/* Desktop */}
+      <div className="desktop-shell">
+        <aside className="glass desktop-sidebar">
+          <div className="brand-row">
+            <LogoIcon className="w-7 h-7" />
+            <span className="brand-text">EduOrb</span>
           </div>
-          <nav className="flex flex-col gap-0.5 flex-1">
-            {NAV_ITEMS.map(n => (
-              <button key={n.id} onClick={() => setActiveTab(n.id)} className={`nav-item ${activeTab === n.id ? "active" : ""}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16"><path d={n.icon} /></svg>
-                <span>{n.label}</span>
+          <nav className="nav-list">
+            {NAV_ITEMS.map((item) => (
+              <button key={item.id} type="button" onClick={() => openTab(item.id)} className={`nav-item ${activeTab === item.id ? "active" : ""}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={item.icon} /></svg>
+                <span>{item.label}</span>
               </button>
             ))}
           </nav>
-          <button className="mt-auto flex items-center justify-center gap-2 py-2 rounded-full text-xs font-semibold" style={{ background: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc", fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1 }}>
+          <button type="button" className="parent-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 0 1 5.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" /></svg>
             Parent Connect
           </button>
         </aside>
 
-        {/* Center: Orb + tab panel */}
-        <main className="flex-1 flex flex-col items-center overflow-y-auto min-w-0">
-          <div className="flex flex-col items-center pt-4 shrink-0">
+        <main className="desktop-center">
+          <div className="orb-copy">
             <motion.div initial={{ scale: 0.9, opacity: 0.5 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.6 }}>
               <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
             </motion.div>
-            <h1 className="mt-4" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: 4, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 10, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 4 }}>
-              {isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}
-            </span>
-            {voiceError && voiceError !== "no-speech" && (
-              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#ef4444", opacity: 0.6, marginTop: 2 }}>
-                Mic error: {voiceError}
-              </span>
-            )}
-            <button className={`voice-btn mt-4 ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <h1 className="app-title">EduOrb</h1>
+            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}</span>
+            {voiceError && voiceError !== "no-speech" && <span className="voice-error">Mic error: {voiceError}</span>}
+            <button type="button" className={`voice-btn mt-4 ${isListening ? "active" : ""}`} onClick={toggleVoice}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
               {isListening ? "Listening..." : "Voice Command"}
             </button>
-            {!voiceSupported && (
-              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#ef4444", opacity: 0.6, marginTop: 4 }}>
-                Voice not supported in this browser
-              </span>
-            )}
+            {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
           </div>
-          <div className="w-full max-w-xs px-4 mt-3 mb-4 glass rounded-xl p-3 shrink-0">
-            <PanelForTab tab={activeTab} onVoiceSend={sendMsg} />
+          <div className="glass info-panel">
+            <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
           </div>
         </main>
 
-        {/* Right: Chat — flex-based to fill remaining space */}
-        <aside className="glass flex flex-col shrink-0 overflow-hidden" style={{ width: "min(440px, 38vw)", minWidth: 320 }}>
+        <aside className="glass desktop-chat">
           <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} />
         </aside>
       </div>
 
-      {/* ══ TABLET md-lg ══ 2-column: orb | chat */}
-      <div className="relative z-10 hidden md:flex lg:hidden flex-col h-full">
-        <div className="flex items-center justify-between px-3 py-2 glass shrink-0" style={{ borderRadius: 0, borderBottom: "1px solid var(--glass-border)" }}>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.25)" }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /></svg>
-            </div>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--text-bright)", letterSpacing: 2 }}>EduOrb</span>
-          </div>
-          <div className="flex gap-0.5">
-            {NAV_ITEMS.map(n => (
-              <button key={n.id} onClick={() => setActiveTab(n.id)} className={`p-1.5 rounded-lg transition-all ${activeTab === n.id ? "text-cyan-400 bg-cyan-400/10" : "text-gray-500"}`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={n.icon} /></svg>
+      {/* Tablet */}
+      <div className="tablet-shell">
+        <header className="tablet-topbar glass">
+          <div className="brand-row brand-row--compact"><LogoIcon className="w-6 h-6" /><span className="brand-text">EduOrb</span></div>
+          <div className="topbar-actions">
+            {NAV_ITEMS.map((item) => (
+              <button key={item.id} type="button" onClick={() => openTab(item.id)} className={`topbar-icon ${activeTab === item.id ? "active" : ""}`} aria-label={item.label}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={item.icon} /></svg>
               </button>
             ))}
           </div>
-        </div>
-        <div className="flex-1 flex overflow-hidden">
-          <main className="flex-1 flex flex-col items-center justify-start p-3 min-w-0 overflow-y-auto">
+        </header>
+        <div className="tablet-main">
+          <main className="tablet-center">
             <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
-            <h1 className="mt-2" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: 3, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
-            <button className={`voice-btn mt-3 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <h1 className="app-title app-title--tablet">EduOrb</h1>
+            <button type="button" className={`voice-btn mt-3 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
               {isListening ? "Listening..." : "Voice"}
             </button>
-            <div className="w-full max-w-sm mt-3 glass rounded-xl p-3">
-              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} />
+            <div className="glass info-panel info-panel--tablet">
+              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
             </div>
           </main>
-          <aside className="flex flex-col border-l glass shrink-0 overflow-hidden" style={{ width: "45vw", minWidth: 280, borderRadius: 0, borderColor: "var(--glass-border)" }}>
+          <aside className="glass tablet-chat">
             <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} />
           </aside>
         </div>
       </div>
 
-      {/* ══ MOBILE < md ══ single column, orb/chat toggle */}
-      <div className="relative z-10 flex md:hidden flex-col h-full">
-        <div className="flex items-center justify-between px-3 py-2 glass shrink-0" style={{ borderRadius: 0, borderBottom: "1px solid var(--glass-border)" }}>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,212,255,0.1)", border: "1px solid rgba(0,212,255,0.25)" }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /></svg>
-            </div>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--text-bright)", letterSpacing: 2 }}>EduOrb</span>
-          </div>
-          <button onClick={() => setShowChat(!showChat)} className="px-2.5 py-1 rounded-lg text-[10px]" style={{ fontFamily: "'Orbitron', sans-serif", border: "1px solid rgba(0,212,255,0.3)", color: "var(--primary)", background: "rgba(0,212,255,0.08)" }}>
+      {/* Mobile */}
+      <div className="mobile-shell">
+        <header className="mobile-topbar glass">
+          <div className="brand-row brand-row--compact"><LogoIcon className="w-6 h-6" /><span className="brand-text">EduOrb</span></div>
+          <button type="button" onClick={() => setShowChat((value) => !value)} className="mobile-toggle">
             {showChat ? "Orb" : "Chat"}
           </button>
-        </div>
+        </header>
 
         {!showChat ? (
-          <main className="flex-1 flex flex-col items-center justify-center px-4 overflow-y-auto">
+          <main className="mobile-orb-view">
             <OrbHero isListening={isListening} isSpeaking={isSpeaking} orbSize={orbSize} />
-            <h1 className="mt-3" style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: 4, background: "linear-gradient(135deg, #00d4ff, #a855f7, #22d3ee)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>EduOrb</h1>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 10, letterSpacing: 3, color: "var(--primary)", opacity: 0.6, marginTop: 4 }}>
-              {isListening ? "Listening..." : "Speak to EduOrb"}
-            </span>
-            {voiceError && voiceError !== "no-speech" && (
-              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#ef4444", opacity: 0.6, marginTop: 2 }}>
-                Mic error: {voiceError}
-              </span>
-            )}
-            <button className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
+            <h1 className="app-title app-title--mobile">EduOrb</h1>
+            <span className="orb-status">{isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Speak to EduOrb"}</span>
+            {voiceError && voiceError !== "no-speech" && <span className="voice-error">Mic error: {voiceError}</span>}
+            <button type="button" className={`voice-btn mt-4 text-xs ${isListening ? "active" : ""}`} onClick={toggleVoice}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></svg>
               {isListening ? "Listening..." : "Voice Command"}
             </button>
-            {!voiceSupported && (
-              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9, color: "#ef4444", opacity: 0.6, marginTop: 4 }}>
-                Voice not supported in this browser
-              </span>
-            )}
-            <div className="w-full mt-4 glass rounded-xl p-3">
-              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} />
+            {!voiceSupported && <span className="voice-error">Voice not supported in this browser</span>}
+            <div className="glass info-panel info-panel--mobile">
+              <PanelForTab tab={activeTab} onVoiceSend={sendMsg} onVisionSend={handleVisionUpload} />
             </div>
           </main>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="mobile-chat-view">
             <ChatPanel messages={messages} input={input} setInput={setInput} send={send} onKey={onKey} endRef={endRef} providerInfo={providerInfo} progress={progress} isCompact />
           </div>
         )}
 
-        {/* Bottom nav */}
-        <nav className="shrink-0 flex items-center justify-around py-1.5 px-1 glass" style={{ borderTop: "1px solid var(--glass-border)", borderRadius: 0, paddingBottom: "max(6px, env(safe-area-inset-bottom))" }}>
-          {NAV_ITEMS.map(n => (
-            <button key={n.id} onClick={() => { setActiveTab(n.id); setShowChat(true); }}
-              className={`flex flex-col items-center gap-0.5 px-2 py-0.5 rounded-lg ${activeTab === n.id ? "text-cyan-400" : "text-gray-500"}`}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={n.icon} /></svg>
-              <span className="text-[8px] tracking-wider">{n.label}</span>
+        <nav className="mobile-bottom-nav glass">
+          {NAV_ITEMS.map((item) => (
+            <button key={item.id} type="button" onClick={() => openTab(item.id, false)} className={`mobile-nav-item ${activeTab === item.id ? "active" : ""}`}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={item.icon} /></svg>
+              <span>{item.label}</span>
             </button>
           ))}
         </nav>

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 /**
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Image is required" }, { status: 400 });
   }
   if (!ALLOWED_TYPES.has(image.type) || image.size > MAX_IMAGE_BYTES) {
-    return Response.json({ error: "Use a PNG, JPEG, or WebP image up to 5 MB" }, { status: 400 });
+    return Response.json({ error: "Use a PNG, JPEG, or WebP image up to 10 MB" }, { status: 400 });
   }
 
   const bytes = Buffer.from(await image.arrayBuffer()).toString("base64");

@@ -7,10 +7,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Pin the workspace root to THIS project — the parent directory has a
-  // stray package-lock.json that confuses Next.js/Netlify root detection.
+  output: "standalone",
+  // Pin the workspace root to this project for Docker/Netlify builds.
   outputFileTracingRoot: __dirname,
-
 };
 
 export default nextConfig;
