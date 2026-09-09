@@ -41,6 +41,11 @@ export async function POST(request: Request) {
 
     const available = getAvailableProviders();
     const providerList = available.length > 0 ? available.map((provider) => provider.name).join(" → ") : "No provider configured";
+    
+    // Diagnostic: log provider availability
+    console.log(`[chat] Providers: ${providerList}, available count: ${available.length}`);
+    console.log(`[chat] GROQ_API_KEY set: ${!!process.env.GROQ_API_KEY}, GOOGLE_API_KEY set: ${!!process.env.GOOGLE_API_KEY}`);
+    
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
