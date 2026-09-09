@@ -4,6 +4,7 @@
  * Streams completions from the first available provider.
  * Falls back through the provider list on failure.
  * Uses skipRemainingGroq to skip all Groq models on 429 (shared API key).
+ * Uses skipRemainingNvidia to skip all NVIDIA NIM models on 429 (shared API key).
  */
 
 import {
@@ -29,11 +30,10 @@ export interface StreamingOptions {
 
 // No in-memory cooldown — on serverless (Netlify Lambda), the Map persists
 // across requests within the same instance, permanently blacklisting providers
-// after the first 429. The skipRemainingGroq flag handles the shared-key case.
+// after the first 429. The skipRemaining* flags handle the shared-key case.
 
-// 5-second timeout per provider — health check proved Gemini needs ~3-4s from Netlify
-// 3 × 5 = 15s max, but skipRemainingGroq saves ~5s when Groq 429s
-const PROVIDER_TIMEOUT_MS = 5_000;
+// 8-second timeout per provider — NVIDIA NIM models can be slower to start
+const PROVIDER_TIMEOUT_MS = 8_000;
 
 /**
  * Fetch a streaming completion from a single provider.
@@ -183,7 +183,8 @@ export async function streamChat({
     : PROVIDERS.slice(0, 1);
 
   let lastError: Error = new Error("No providers available");
-  let skipRemainingGroq = false; // If Groq primary is 429, skip all Groq models (same API key)
+  let skipRemainingGroq = false;   // If Groq primary is 429, skip all Groq models (same API key)
+  let skipRemainingNvidia = false; // If NVIDIA NIM is 429, skip all NVIDIA models (same API key)
 
   for (const provider of providersToTry) {
     // Skip providers without keys
@@ -200,6 +201,12 @@ export async function streamChat({
       continue;
     }
 
+    // Skip all NVIDIA NIM models if one was rate-limited (they share the same API key)
+    if (skipRemainingNvidia && provider.baseURL.includes("nvidia.com")) {
+      console.log(`[ai] ${provider.name}: skipped (NVIDIA NIM rate-limited, same API key)`);
+      continue;
+    }
+
     try {
       console.log(`[ai] Trying ${provider.name} (${provider.defaultModel})...`);
       const response = await fetchFromProvider(provider, allMessages, options);
@@ -213,8 +220,8 @@ export async function streamChat({
         chunkCount++;
         lastChunkTime = Date.now();
 
-        // If no chunk for 5 seconds, break and try next provider
-        if (Date.now() - lastChunkTime > 5000) {
+        // If no chunk for 8 seconds, break and try next provider
+        if (Date.now() - lastChunkTime > 8000) {
           console.warn(`[ai] ${provider.name}: stream stalled, trying next provider`);
           break;
         }
@@ -230,7 +237,13 @@ export async function streamChat({
       // If this Groq model got 429, mark to skip all Groq models
       if (lastError.message.includes("429") && provider.baseURL.includes("groq.com")) {
         skipRemainingGroq = true;
-        console.log(`[ai] Groq rate-limited — skipping remaining Groq models, going to Gemini`);
+        console.log(`[ai] Groq rate-limited — skipping remaining Groq models`);
+      }
+
+      // If this NVIDIA NIM model got 429, mark to skip all NVIDIA models
+      if (lastError.message.includes("429") && provider.baseURL.includes("nvidia.com")) {
+        skipRemainingNvidia = true;
+        console.log(`[ai] NVIDIA NIM rate-limited — skipping remaining NVIDIA models`);
       }
 
       if (onError) {

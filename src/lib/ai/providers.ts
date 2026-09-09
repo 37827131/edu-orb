@@ -1,12 +1,12 @@
 /**
  * EDU-ORB AI Provider Layer
  *
- * Hybrid architecture:
+ * Hybrid architecture — 6 providers, tried in order:
  *   1. LOCAL Ollama — fastest, zero cost, runs on GTX 1650
- *   2. Groq — fast cloud fallback (free tier)
- *   3. OpenRouter — free model fallback
+ *   2. Groq — fast cloud (free tier, 200K tokens/day)
+ *   3. NVIDIA NIM — 120+ free models, 40 RPM, no daily cap
  *   4. Google Gemini — free tier fallback
- *   5. GitHub Models — last resort
+ *   5. Groq-Backup — different model, same key (last resort)
  *
  * When running on Netlify (serverless), Ollama is unreachable,
  * so it auto-skips to cloud providers.
@@ -16,9 +16,8 @@
  *   OLLAMA_CHAT_MODEL    — Local model (default: qwen2.5:7b)
  *   OLLAMA_VISION_MODEL  — Local vision model (default: llava:7b)
  *   GROQ_API_KEY         — Groq (fast inference, primary cloud)
- *   OPENROUTER_API_KEY   — OpenRouter (free model, no credits needed)
+ *   NVIDIA_API_KEY       — NVIDIA NIM (120+ free models, no daily cap)
  *   GOOGLE_API_KEY       — Google Gemini (free tier)
- *   GITHUB_TOKEN         — GitHub Models (Azure Copilot infra)
  */
 
 export interface ProviderConfig {
@@ -35,6 +34,7 @@ export interface ProviderConfig {
 /**
  * Provider chain — tried in order.
  * Local Ollama is first (fastest, free), cloud providers follow as fallback.
+ * NVIDIA NIM is inserted early because it has 40 RPM with no daily cap.
  */
 export const PROVIDERS: ProviderConfig[] = [
   // ── LOCAL ──
@@ -42,7 +42,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: "Local Ollama",
     baseURL: `${(process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "")}/v1`,
     apiKeyEnv: "OLLAMA_API_KEY",
-    defaultModel: process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b",
+    defaultModel: process.env.OLLAMA_CHAT_MODEL || "qwen2.5:3b",
     requiresApiKey: false,
     skipOnNetlify: true,
   },
@@ -55,16 +55,28 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: "qwen/qwen3.8-27b",
   },
   {
-    name: "Groq-Backup",
-    baseURL: "https://api.groq.com/openai/v1",
-    apiKeyEnv: "GROQ_API_KEY",
-    defaultModel: "qwen/qwen3.6-27b",
+    name: "NVIDIA NIM",
+    baseURL: "https://integrate.api.nvidia.com/v1",
+    apiKeyEnv: "NVIDIA_API_KEY",
+    defaultModel: "nvidia/nemotron-3-super-120b-a12b",
+  },
+  {
+    name: "NVIDIA NIM (DeepSeek)",
+    baseURL: "https://integrate.api.nvidia.com/v1",
+    apiKeyEnv: "NVIDIA_API_KEY",
+    defaultModel: "deepseek-ai/deepseek-v4-flash-0731",
   },
   {
     name: "Gemini",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     apiKeyEnv: "GOOGLE_API_KEY",
     defaultModel: "gemini-3.5-flash-lite",
+  },
+  {
+    name: "Groq-Backup",
+    baseURL: "https://api.groq.com/openai/v1",
+    apiKeyEnv: "GROQ_API_KEY",
+    defaultModel: "qwen/qwen3.6-27b",
   },
 ];
 
