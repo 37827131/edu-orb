@@ -206,6 +206,7 @@ export async function streamChat({
     : PROVIDERS.slice(0, 1);
 
   let lastError: Error = new Error("No providers available");
+  let skipRemainingGroq = false; // If Groq primary is 429, skip all Groq models (same API key)
 
   for (const provider of providersToTry) {
     // Skip providers without keys
@@ -213,6 +214,12 @@ export async function streamChat({
       const skipErr = new Error(`${provider.name}: skipped (API key not configured or unreachable)`);
       console.log(`[ai] ${skipErr.message}`);
       lastError = skipErr;
+      continue;
+    }
+
+    // Skip all Groq models if one was rate-limited (they share the same API key)
+    if (skipRemainingGroq && provider.baseURL.includes("groq.com")) {
+      console.log(`[ai] ${provider.name}: skipped (Groq rate-limited, same API key)`);
       continue;
     }
 
@@ -242,6 +249,13 @@ export async function streamChat({
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       console.error(`[ai] ${provider.name} failed:`, lastError.message);
+
+      // If this Groq model got 429, mark to skip all Groq models
+      if (lastError.message.includes("429") && provider.baseURL.includes("groq.com")) {
+        skipRemainingGroq = true;
+        console.log(`[ai] Groq rate-limited — skipping remaining Groq models, going to Gemini`);
+      }
+
       if (onError) {
         onError(lastError, provider.name);
       }
