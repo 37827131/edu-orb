@@ -54,7 +54,7 @@ async function fetchFromProvider(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
     temperature: options.temperature ?? 0.7,
-    max_tokens: options.maxTokens ?? 2048,
+    max_tokens: options.maxTokens ?? 512,
   };
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
