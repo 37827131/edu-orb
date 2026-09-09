@@ -1,24 +1,38 @@
 # EDU-ORB — AI Tutor
 
- A self-hostable AI tutor with an animated armored tutor hero, streaming cloud AI,
-and natural voice selection. Built with **Next.js 15 (App Router)**, **React 19**,
+A self-hostable AI tutor with an animated armored tutor hero, streaming cloud AI,
+and natural voice. Built with **Next.js 15 (App Router)**, **React 19**,
 **TypeScript**, **Tailwind CSS**, and **Framer Motion**.
 
 ![stack](https://img.shields.io/badge/Next.js%2015-React%2019-TypeScript-blue)
 
 ## Features
 
-- 🎓 **Animated Orb avatar** — idle / listening / speaking / thinking / error states with ambient particles and glow effects
-- 🛡️ **Armored tutor hero** — original Iron-Man-inspired helmet treatment with state-aware glow, listening, thinking, speaking, and error states
+- 🎓 **Animated Orb avatar** — idle / listening / speaking / thinking / error states
+- 🛡️ **Iron Man visor face** — JARVIS-inspired helmet with state-aware glow
 - 💬 **Streaming chat** — SSE streamed responses rendered as they arrive
 - 📚 **Lesson mode** — auto-generated lesson plans with key points
-- 📝 **Quiz mode** — auto-generated multiple-choice quizzes with instant feedback and score tracking
-- 🗣️ **Voice** — speech-to-text dictation (browser mic) and text-to-speech via ElevenLabs / Gemini with a voice picker
-- 🔁 **Multi-provider AI fallback** — Groq → OpenRouter → Gemini → GitHub Models, tried in order until one responds
+- 📝 **Quiz mode** — auto-generated multiple-choice quizzes with score tracking
+- 🗣️ **Voice command** — speech-to-text with continuous listening + browser TTS
+- 🔁 **6-provider AI chain** — automatic failover across providers
 - 📊 **Session progress** — message counts, time spent, quiz score
-- 🖼️ **Vision upload** — local Ollama/LLaVA image-question analysis through `/api/vision`
+- 🖼️ **Vision upload** — image analysis via Ollama/LLaVA
+- 🔐 **GPG encrypted vault** — API keys stored securely at rest
 
-## Getting started
+## Provider Chain (6 providers, tried in order)
+
+| # | Provider | Model | Limit | Notes |
+|---|----------|-------|-------|-------|
+| 1 | **Local Ollama** | qwen2.5:3b | Unlimited | Fastest, runs on GTX 1650 |
+| 2 | **Groq** | qwen3.8-27b | 200K tokens/day | Fast cloud inference |
+| 3 | **NVIDIA NIM** | nemotron-3-super-120b | 40 RPM, no daily cap | 120+ free models |
+| 4 | **NVIDIA NIM** | deepseek-v4-flash | 40 RPM, no daily cap | Backup NVIDIA model |
+| 5 | **Gemini** | 3.5-flash-lite | Free tier | Google fallback |
+| 6 | **Groq-Backup** | qwen3.6-27b | Same key as #2 | Last resort |
+
+**Smart failover:** If a provider returns 429, all models from that provider are skipped.
+
+## Getting Started
 
 ### Prerequisites
 
@@ -33,32 +47,22 @@ npm install
 
 ### 2. Configure API keys
 
-Copy the environment template and fill in at least **one** AI provider key:
-
 ```bash
-cp .env.example .env.local   # or create .env.local manually
+cp .env.example .env.local
 ```
 
-The following keys are read from `.env.local` (see `.env.local` in the repo root for the full list):
+Required keys (at least one AI provider):
 
-| Variable               | Provider         | Required |
-| ---------------------- | ---------------- | -------- |
-| `GROQ_API_KEY`         | Groq (primary)   | optional |
-| `OPENROUTER_API_KEY`   | OpenRouter (free model) | optional |
-| `GOOGLE_API_KEY`       | Google Gemini    | optional |
-| `GITHUB_TOKEN`         | GitHub Models    | optional |
-| `ELEVENLABS_API_KEY`   | TTS voice        | optional |
+| Variable | Provider | Required |
+|----------|----------|----------|
+| `GROQ_API_KEY` | Groq (primary) | optional |
+| `NVIDIA_API_KEY` | NVIDIA NIM (120+ models) | optional |
+| `GOOGLE_API_KEY` | Google Gemini | optional |
 
-At least one AI provider key is required for chat/lesson/quiz features.
-Without a key, the app runs but returns "API key not configured" errors.
-
-Spoken responses use **Groq Orpheus TTS** (fast, free with `GROQ_API_KEY`)
-as the first fallback after ElevenLabs — the first time you use it, accept the
-model terms once at console.groq.com → Playground → `canopylabs/orpheus-v1-english`.
-`ELEVENLABS_API_KEY` or `GOOGLE_API_KEY` are also supported; otherwise the
-built-in browser "System Voice" is available as a fallback.
-
-> `.env.local` is gitignored — never commit API keys.
+Get free keys:
+- **Groq:** https://console.groq.com (200K tokens/day)
+- **NVIDIA NIM:** https://build.nvidia.com (40 RPM, no daily cap)
+- **Gemini:** https://aistudio.google.com (free tier)
 
 ### 3. Run
 
@@ -66,43 +70,27 @@ built-in browser "System Voice" is available as a fallback.
 # Development (port 3311)
 npm run dev
 
-# Production (Next.js API routes enabled)
+# Production
 npm run build
 npm start
 ```
 
-Open http://localhost:3311.
+### GPG Encrypted Vault
 
-### Self-hosted Docker
-
-The original nginx static Dockerfile could not serve Next.js API routes. The current
-Dockerfile uses Next.js standalone output and the dedicated Compose file includes
-the web runtime, PostgreSQL, MinIO-compatible object storage, and Caddy:
+API keys are stored encrypted at `~/.edu-orb-vault/secrets.gpg`:
 
 ```bash
-cp .env.selfhost.example .env.selfhost
-# Set strong values in .env.selfhost; do not commit it.
-docker compose --env-file .env.selfhost -f docker-compose.eduorb.yml up -d --build
-curl http://127.0.0.1:3311/api/health
+# Unlock (decrypt to .env.local)
+~/.edu-orb-vault/unlock.sh
+
+# Lock (encrypt .env.local back to vault)
+~/.edu-orb-vault/lock.sh
+
+# Status
+~/.edu-orb-vault/status.sh
 ```
 
-The web container reaches a host Ollama service through
-`host.docker.internal:11434`. For a fully containerized model, add the official
-Ollama image with the NVIDIA runtime only on a host with NVIDIA Container Toolkit
-and enough VRAM; the current GTX 1650 is suitable for small/quantized models but
-not frontier-scale inference.
-
-### Scripts
-
-| Command              | Description                          |
-| -------------------- | ------------------------------------ |
-| `npm run dev`        | Start dev server on port 3311        |
-| `npm run build`      | Production build                     |
-| `npm start`          | Serve production build on port 3311  |
-| `npm run typecheck`  | Run `tsc --noEmit`                   |
-| `npm run lint`       | Run Next.js lint                     |
-
-## How it works
+## Architecture
 
 ```
 ┌─────────────────────┐   SSE stream    ┌──────────────────────┐
@@ -114,25 +102,67 @@ not frontier-scale inference.
                                                    ▼
                               ┌──────────────────────────────┐
                               │  AI provider layer (lib/ai)  │
-                              │  Groq → OpenRouter → Gemini  │
-                              │  → GitHub Models (fallback)  │
+                              │  Ollama → Groq → NVIDIA NIM  │
+                              │  → Gemini → Groq-Backup      │
                               └──────────────────────────────┘
 ```
 
-- **`src/lib/ai/providers.ts`** — provider registry, system prompts, key lookup
-- **`src/lib/ai/client.ts`** — `streamChat` (SSE parsing + provider fallback) and `complete` (JSON for lesson/quiz generation)
-- **`src/lib/voice/useVoice.ts`** — `useSpeechRecognition` (STT) and `useTextToSpeech` (TTS) hooks
-- **`src/app/api/*`** — server routes that call providers with keys only ever read server-side (never shipped to the browser)
+### Key Files
 
-### API routes
+| File | Purpose |
+|------|---------|
+| `src/lib/ai/providers.ts` | Provider registry, system prompts, key lookup |
+| `src/lib/ai/client.ts` | `streamChat` (SSE + fallback) and `complete` (JSON) |
+| `src/app/SessionSetup.tsx` | Main UI with voice, chat, panels |
+| `src/app/api/chat/route.ts` | Chat API route |
+| `src/app/api/health/route.ts` | Provider health check endpoint |
 
-| Route          | Method | Body                                        | Returns                          |
-| -------------- | ------ | ------------------------------------------- | -------------------------------- |
-| `/api/chat`    | POST   | `{ messages: [{role, content}], systemPrompt?, temperature? }` | SSE stream of `{type: "delta"}` events |
-| `/api/lesson`  | POST   | `{ topic, level }`                          | `{ lesson, quiz }`               |
-| `/api/voice`   | POST   | `{ text, voice?, speed? }`                  | `audio/mpeg` stream              |
+### API Routes
 
-## Known limitations
+| Route | Method | Body | Returns |
+|-------|--------|------|---------|
+| `/api/chat` | POST | `{ messages, subject }` | SSE stream |
+| `/api/lesson` | POST | `{ topic, level }` | `{ lesson, quiz }` |
+| `/api/health` | GET | — | Provider status JSON |
 
-- Speech recognition requires Chrome/Edge/Safari on HTTPS or localhost (not Firefox).
-- Gemini TTS via the `generateContent` audio modality is experimental; ElevenLabs is the preferred TTS provider.
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server (port 3311) |
+| `npm run build` | Production build |
+| `npm start` | Serve production build |
+| `npm run typecheck` | TypeScript check |
+| `npm run lint` | ESLint check |
+
+## Deployment
+
+### Netlify (current)
+
+```bash
+# Draft deploy
+netlify deploy --dir=.next --site SITE_ID
+
+# Promote to production
+DRAFT_ID=$(netlify api listSiteDeploys --data '{"site_id":"SITE_ID","per_page":1}' | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+netlify api restoreSiteDeploy --data '{"site_id":"SITE_ID","deploy_id":"DRAFT_ID"}'
+```
+
+### Environment Variables (Netlify)
+
+```bash
+netlify env:set GROQ_API_KEY "gsk_..."
+netlify env:set NVIDIA_API_KEY "nvapi-..."
+netlify env:set GOOGLE_API_KEY "AIza..."
+```
+
+## Known Limitations
+
+- Speech recognition requires Chrome/Edge/Safari on HTTPS or localhost
+- Voice command works best with clear, short phrases
+- Groq has 200K tokens/day limit (NVIDIA NIM has no daily cap as backup)
+- Browser TTS is robotic — consider ElevenLabs for production
+
+## License
+
+MIT

@@ -98,7 +98,7 @@ const VISION_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 // ── Types ───────────────────────────────────────────────────────
 
-type Msg = { id: string; role: "user" | "bot"; text: string; meta?: string };
+type Msg = { id: string; role: "user" | "bot"; text: string; meta?: string; timestamp?: number };
 type ChatPayload = { providers?: string; delta?: string; error?: string };
 type UploadState = "idle" | "uploading" | "done" | "error";
 
@@ -136,13 +136,19 @@ function getReadableError(error: unknown, fallback: string): string {
 }
 
 function toApiMessages(messages: Msg[]) {
-  return messages
-    .filter((m) => m.text.trim().length > 0)
-    .slice(-18)
-    .map((m) => ({
-      role: m.role === "bot" ? "assistant" : "user",
-      content: m.text,
-    }));
+  // Deduplicate consecutive identical messages (prevents loop artifacts)
+  const deduped: Msg[] = [];
+  for (const m of messages) {
+    if (m.text.trim().length === 0) continue;
+    const last = deduped[deduped.length - 1];
+    if (last && last.role === m.role && last.text.trim() === m.text.trim()) continue;
+    deduped.push(m);
+  }
+  // Send last 12 messages max (keeps context manageable)
+  return deduped.slice(-12).map((m) => ({
+    role: m.role === "bot" ? "assistant" : "user",
+    content: m.text,
+  }));
 }
 
 async function readChatStream(response: Response, onPayload: (payload: ChatPayload) => void) {
@@ -234,6 +240,7 @@ function useVoice() {
   const transcriptRef = useRef("");
   const restartCountRef = useRef(0);
   const finalTextRef = useRef("");
+  const lastSentRef = useRef("");
 
   useEffect(() => {
     listeningRef.current = isListening;
@@ -329,7 +336,14 @@ function useVoice() {
     restartCountRef.current = 0;
   }, []);
 
-  return { isListening, transcript, isSupported, error, startListening, stopListening };
+  const resetTranscript = useCallback(() => {
+    transcriptRef.current = "";
+    finalTextRef.current = "";
+    lastSentRef.current = "";
+    setTranscript("");
+  }, []);
+
+  return { isListening, transcript, isSupported, error, startListening, stopListening, resetTranscript };
 }
 
 // ── TTS Hook ───────────────────────────────────────────────────
@@ -878,12 +892,13 @@ export default function SessionSetup() {
   const [selectedClass, setSelectedClass] = useState(BOARD_DATA.cbse.defaultClass);
   const endRef = useRef<HTMLDivElement>(null);
   const orbSize = useOrbSize();
+  const lastVoiceSentRef = useRef("");
 
   // Use refs for values needed inside callbacks to avoid stale closures
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
-  const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening } = useVoice();
+  const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening, resetTranscript } = useVoice();
   const { speak: ttsSpeak, stop: ttsStop } = useTTS();
 
   useEffect(() => {
@@ -894,7 +909,15 @@ export default function SessionSetup() {
     const trimmed = text.trim();
     if (!trimmed || isSending) return;
 
-    const userMessage: Msg = { id: crypto.randomUUID(), role: "user", text: trimmed };
+    // Prevent duplicate messages (same text sent within 3 seconds)
+    const now = Date.now();
+    const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+    if (lastMsg && lastMsg.role === "user" && lastMsg.text.trim() === trimmed && now - (lastMsg.timestamp || 0) < 3000) {
+      console.log("[chat] Duplicate message blocked:", trimmed.slice(0, 30));
+      return;
+    }
+
+    const userMessage: Msg = { id: crypto.randomUUID(), role: "user", text: trimmed, timestamp: now };
     const botId = crypto.randomUUID();
     const visibleMessages = [...messagesRef.current, userMessage];
     const displayMessages: Msg[] = [...visibleMessages, { id: botId, role: "bot", text: "" }];
@@ -977,8 +1000,11 @@ export default function SessionSetup() {
   useEffect(() => {
     if (transcript && !isListening) {
       const finalTranscript = transcript.trim();
-      if (finalTranscript) {
+      // Prevent re-triggering: skip if same transcript was already sent
+      if (finalTranscript && finalTranscript !== lastVoiceSentRef.current) {
+        lastVoiceSentRef.current = finalTranscript;
         setInput("");
+        resetTranscript();
         void sendMsg(finalTranscript);
       }
     }
