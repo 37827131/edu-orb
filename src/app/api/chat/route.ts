@@ -6,7 +6,7 @@ export const maxDuration = 30;
 
 const MAX_MESSAGES = 18;
 const MAX_MESSAGE_CHARS = 6000;
-const STREAM_TIMEOUT_MS = 27000; // 27s to stay safely within Netlify's 30s function limit
+const STREAM_TIMEOUT_MS = 12000; // 12s to fit within Netlify free tier ~10-15s function limit
 
 function normalizeMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) return [];
