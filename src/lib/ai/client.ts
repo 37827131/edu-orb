@@ -3,7 +3,7 @@
  *
  * Streams completions from the first available provider.
  * Falls back through the provider list on failure.
- * Tracks rate-limited providers with a 5-minute cooldown.
+ * Uses skipRemainingGroq to skip all Groq models on 429 (shared API key).
  */
 
 import {
