@@ -55,10 +55,10 @@ export const PROVIDERS: ProviderConfig[] = [
     defaultModel: "qwen/qwen3.8-27b",
   },
   {
-    name: "Groq-Llama",
+    name: "Groq-Backup",
     baseURL: "https://api.groq.com/openai/v1",
     apiKeyEnv: "GROQ_API_KEY",
-    defaultModel: "llama-3.1-8b-instant",
+    defaultModel: "qwen/qwen3.6-27b",
   },
   {
     name: "Gemini",

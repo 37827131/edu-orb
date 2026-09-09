@@ -45,8 +45,8 @@ function markRateLimited(providerName: string): void {
   console.warn(`[ai] ${providerName}: rate-limited, cooling down for 5 minutes`);
 }
 
-// 7-second timeout per provider — 3 × 7 = 21s, safely under 28s Netlify limit
-const PROVIDER_TIMEOUT_MS = 7_000;
+// 8-second timeout per provider — 3 × 8 = 24s, safely under 27s Netlify limit
+const PROVIDER_TIMEOUT_MS = 8_000;
 
 /**
  * Fetch a streaming completion from a single provider.

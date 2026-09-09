@@ -2,11 +2,11 @@ import { streamChat, type ChatMessage } from "@/lib/ai/client";
 import { getAvailableProviders, CBSE_SYSTEM_PROMPT } from "@/lib/ai/providers";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const MAX_MESSAGES = 18;
 const MAX_MESSAGE_CHARS = 6000;
-const STREAM_TIMEOUT_MS = 28000; // 28s to stay within Netlify's 30s function limit
+const STREAM_TIMEOUT_MS = 27000; // 27s to stay safely within Netlify's 30s function limit
 
 function normalizeMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) return [];
