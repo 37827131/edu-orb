@@ -54,6 +54,7 @@ export async function POST(request: Request) {
 
         try {
           let chunkCount = 0;
+          let gotError = false;
 
           // Wrap streamChat with a timeout
           const streamPromise = streamChat({
@@ -76,11 +77,13 @@ export async function POST(request: Request) {
           await Promise.race([streamPromise, timeoutPromise]);
 
           if (chunkCount === 0) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: "I couldn't generate a response. Please try again." })}\n\n`));
+            gotError = true;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "AI_UNAVAILABLE" })}\n\n`));
           }
         } catch (error) {
           console.error("[chat] Stream error:", error);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: "AI service is temporarily unavailable. Please try again." })}\n\n`));
+          // Send error signal so frontend can retry (not a delta that looks like content)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "AI_UNAVAILABLE" })}\n\n`));
         }
 
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));

@@ -829,8 +829,8 @@ function ChatPanel({
 
 // ── Retry-capable fetch ─────────────────────────────────────────
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1200;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 2000;
 
 async function fetchWithRetry(url: string, init: RequestInit, retries = MAX_RETRIES): Promise<Response> {
   let lastError: Error | undefined;
@@ -900,9 +900,13 @@ export default function SessionSetup() {
       });
 
       let raw = "";
+      let gotError = false;
       await readChatStream(response, (payload) => {
         if (payload.providers) setProviderInfo(payload.providers);
-        if (payload.error) throw new Error(payload.error);
+        if (payload.error) {
+          gotError = true;
+          throw new Error(payload.error);
+        }
         if (payload.delta) {
           raw += payload.delta;
           const clean = stripThink(raw);
