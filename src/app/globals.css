@@ -305,3 +305,313 @@ button { -webkit-tap-highlight-color: transparent; }
   .orb-status { font-size: 9px; }
   .info-panel--mobile { margin-top: 10px; }
 }
+
+/* ── Visualization Components ── */
+
+/* Diagram (Mermaid) */
+.diagram-container {
+  margin: 8px 0;
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.diagram-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  border-bottom: 1px solid rgba(0,212,255,0.1);
+  text-transform: uppercase;
+}
+.diagram-svg {
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+.diagram-svg svg {
+  max-width: 100%;
+  height: auto;
+  min-height: 80px;
+}
+.diagram-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+.diagram-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0,212,255,0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.diagram-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  color: #f87171;
+  font-size: 12px;
+  background: rgba(239,68,68,0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+.diagram-fallback {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 100px;
+  overflow: auto;
+}
+
+/* Chart (Chart.js) */
+.chart-container {
+  margin: 8px 0;
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.chart-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  border-bottom: 1px solid rgba(0,212,255,0.1);
+  text-transform: uppercase;
+}
+.chart-canvas {
+  padding: 12px;
+  max-height: 280px;
+}
+.chart-canvas canvas {
+  max-height: 260px;
+}
+
+/* Video Embed */
+.video-container {
+  margin: 8px 0;
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.video-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  border-bottom: 1px solid rgba(0,212,255,0.1);
+  text-transform: uppercase;
+}
+.video-toggle {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  background: rgba(0,212,255,0.1);
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.video-toggle:hover {
+  background: rgba(0,212,255,0.2);
+}
+.video-iframe-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 */
+}
+.video-iframe-wrapper iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.video-thumbnail {
+  position: relative;
+  cursor: pointer;
+  line-height: 0;
+}
+.video-thumbnail img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+}
+.video-play-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  background: rgba(0,0,0,0.7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255,255,255,0.3);
+  transition: 0.2s;
+}
+.video-thumbnail:hover .video-play-button {
+  background: rgba(0,212,255,0.8);
+  border-color: var(--primary);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+.video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 12px;
+  border: 1px solid rgba(0,212,255,0.2);
+  border-radius: 8px;
+  transition: 0.2s;
+}
+.video-link:hover {
+  background: rgba(0,212,255,0.1);
+}
+
+/* Utility */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Animation Player */
+.animation-player {
+  margin: 8px 0;
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.animation-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  border-bottom: 1px solid rgba(0,212,255,0.1);
+  text-transform: uppercase;
+}
+.animation-step-count {
+  margin-left: auto;
+  color: #94a3b8;
+  font-weight: 400;
+}
+.animation-viewport {
+  position: relative;
+  padding: 16px;
+  min-height: 120px;
+}
+.animation-svg {
+  display: flex;
+  justify-content: center;
+}
+.animation-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.animation-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+}
+.animation-overlay h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.animation-overlay p {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+.animation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid rgba(0,212,255,0.1);
+}
+.animation-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,212,255,0.2);
+  background: rgba(0,212,255,0.05);
+  color: var(--primary);
+  cursor: pointer;
+  transition: 0.2s;
+}
+.animation-btn:hover:not(:disabled) {
+  background: rgba(0,212,255,0.15);
+}
+.animation-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.animation-btn--play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0,212,255,0.15);
+}
+.animation-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+}
+.animation-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.2);
+  cursor: pointer;
+  transition: 0.2s;
+}
+.animation-dot--active {
+  background: var(--primary);
+  transform: scale(1.2);
+}

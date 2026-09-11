@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import { motion } from "framer-motion";
+import { DiagramRenderer, ChartRenderer, VideoEmbed } from "../components/visuals";
+import { parseResponse, type ParsedBlock } from "../lib/parseResponse";
+import ChatMessage from "../components/ChatMessage";
+import {
+  loadMemory, saveMemory, addSession, trackTopic,
+  buildMemoryContext, extractTopics, getStats,
+  type ConversationMemory, type MemoryMessage
+} from "../lib/memory";
 
 // ── Data ────────────────────────────────────────────────────────
 
@@ -241,6 +249,7 @@ function useVoice() {
   const restartCountRef = useRef(0);
   const finalTextRef = useRef("");
   const lastSentRef = useRef("");
+  const lastSpeechTimeRef = useRef(0);
 
   useEffect(() => {
     listeningRef.current = isListening;
@@ -274,6 +283,7 @@ function useVoice() {
         if (result.isFinal) {
           finalText += result[0].transcript + " ";
           finalTextRef.current = finalText;
+          lastSpeechTimeRef.current = Date.now(); // Track when we last heard speech
         } else {
           interimText += result[0].transcript;
         }
@@ -287,11 +297,27 @@ function useVoice() {
     };
 
     recognition.onend = () => {
-      if (listeningRef.current && restartCountRef.current < 3 && !finalTextRef.current) {
-        restartCountRef.current += 1;
-        try { recognition.start(); } catch {}
+      // When recognition ends, check if we have text to send
+      if (finalTextRef.current.trim()) {
+        // We have final text — send it
+        setIsListening(false);
+        listeningRef.current = false;
+        restartCountRef.current = 0;
         return;
       }
+      
+      // No text yet — check if user was speaking recently (silence timeout)
+      const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
+      if (timeSinceLastSpeech < 2000) {
+        // User was speaking recently, restart to catch more
+        if (restartCountRef.current < 3) {
+          restartCountRef.current += 1;
+          try { recognition.start(); } catch {}
+          return;
+        }
+      }
+      
+      // Stop listening — user is done or timed out
       setIsListening(false);
       listeningRef.current = false;
       restartCountRef.current = 0;
@@ -314,6 +340,7 @@ function useVoice() {
     if (!recognitionRef.current) return;
     transcriptRef.current = "";
     finalTextRef.current = "";
+    lastSpeechTimeRef.current = Date.now();
     setTranscript("");
     setError("");
     setIsListening(true);
@@ -343,7 +370,7 @@ function useVoice() {
     setTranscript("");
   }, []);
 
-  return { isListening, transcript, isSupported, error, startListening, stopListening, resetTranscript };
+  return { isListening, transcript, isSupported, error, startListening, stopListening, resetTranscript, listeningRef, lastSpeechTimeRef, finalTextRef };
 }
 
 // ── TTS Hook ───────────────────────────────────────────────────
@@ -791,6 +818,7 @@ function ChatPanel({
   boardLabel,
   selectedClass,
   isSending,
+  streamingId,
 }: {
   messages: Msg[];
   input: string;
@@ -804,6 +832,7 @@ function ChatPanel({
   boardLabel: string;
   selectedClass: string;
   isSending: boolean;
+  streamingId: string | null;
 }) {
   return (
     <section className="chat-panel-root">
@@ -821,10 +850,12 @@ function ChatPanel({
       <div className={`chat-scroll ${isCompact ? "chat-scroll--compact" : ""}`} aria-live="polite">
         {messages.map((message) => (
           <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`chat-bubble ${message.role === "user" ? "chat-bubble--user" : "chat-bubble--bot"}`}>
-              {message.meta && <div className="message-meta">{message.meta}</div>}
-              {message.text || <span className="typing-cursor" />}
-            </div>
+            <ChatMessage
+              role={message.role}
+              text={message.text}
+              meta={message.meta}
+              isStreaming={message.id === streamingId}
+            />
           </div>
         ))}
         <div ref={endRef} />
@@ -893,13 +924,21 @@ export default function SessionSetup() {
   const endRef = useRef<HTMLDivElement>(null);
   const orbSize = useOrbSize();
   const lastVoiceSentRef = useRef("");
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [memory, setMemory] = useState<ConversationMemory>(() => loadMemory());
+  const sessionMessagesRef = useRef<MemoryMessage[]>([]);
 
   // Use refs for values needed inside callbacks to avoid stale closures
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
-  const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening, resetTranscript } = useVoice();
+  const { isListening, transcript, isSupported: voiceSupported, error: voiceError, startListening, stopListening, resetTranscript, listeningRef, lastSpeechTimeRef, finalTextRef } = useVoice();
   const { speak: ttsSpeak, stop: ttsStop } = useTTS();
+
+  // Load memory on mount
+  useEffect(() => {
+    setMemory(loadMemory());
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -922,15 +961,34 @@ export default function SessionSetup() {
     const visibleMessages = [...messagesRef.current, userMessage];
     const displayMessages: Msg[] = [...visibleMessages, { id: botId, role: "bot", text: "" }];
 
+    // Track in session memory
+    sessionMessagesRef.current.push({ role: "user", text: trimmed, timestamp: now });
+
+    // Extract and track topics
+    const topics = extractTopics(trimmed);
+    let updatedMemory = memory;
+    for (const topic of topics) {
+      updatedMemory = trackTopic(updatedMemory, topic, activeTab, board, selectedClass, topics);
+    }
+    setMemory(updatedMemory);
+
     setMessages(displayMessages);
     setShowChat(true);
     setIsSending(true);
+    setStreamingId(botId);
 
     try {
+      // Build context from memory
+      const memoryContext = buildMemoryContext(updatedMemory, activeTab);
+      
       const response = await fetchWithRetry("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toApiMessages(visibleMessages), subject: activeTab }),
+        body: JSON.stringify({
+          messages: toApiMessages(visibleMessages),
+          subject: activeTab,
+          memoryContext,
+        }),
       });
 
       let raw = "";
@@ -951,6 +1009,7 @@ export default function SessionSetup() {
       const finalClean = stripThink(raw);
       if (finalClean) {
         setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: finalClean } : message));
+        sessionMessagesRef.current.push({ role: "bot", text: finalClean, timestamp: Date.now() });
         setIsSpeaking(true);
         stopListening();
         ttsSpeak(finalClean, () => setIsSpeaking(false));
@@ -963,8 +1022,9 @@ export default function SessionSetup() {
       setMessages((previous) => previous.map((message) => message.id === botId ? { ...message, text: getReadableError(error, "AI service is temporarily unavailable. Please try again.") } : message));
     } finally {
       setIsSending(false);
+      setStreamingId(null);
     }
-  }, [activeTab, isSending, ttsSpeak, stopListening]);
+  }, [activeTab, isSending, memory, ttsSpeak, stopListening]);
 
   const handleVisionUpload = useCallback(async (file: File) => {
     const userId = crypto.randomUUID();
@@ -1010,6 +1070,31 @@ export default function SessionSetup() {
     }
     return undefined;
   }, [isListening, sendMsg, transcript]);
+
+  // Silence detection: auto-stop after 3 seconds of no speech
+  useEffect(() => {
+    if (!isListening) return;
+    
+    const checkSilence = () => {
+      if (!listeningRef.current) return;
+      const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
+      
+      // If we have final text and it's been 1.5s since last speech, send it
+      if (finalTextRef.current.trim() && timeSinceLastSpeech > 1500) {
+        stopListening();
+        return;
+      }
+      
+      // If no speech for 3 seconds, stop
+      if (timeSinceLastSpeech > 3000) {
+        stopListening();
+        return;
+      }
+    };
+    
+    const interval = setInterval(checkSilence, 500);
+    return () => clearInterval(interval);
+  }, [isListening, stopListening]);
 
   const send = useCallback(() => {
     const trimmed = input.trim();
@@ -1105,6 +1190,7 @@ export default function SessionSetup() {
             boardLabel={boardLabel}
             selectedClass={selectedClass}
             isSending={isSending}
+            streamingId={streamingId}
           />
         </aside>
       </div>
@@ -1147,6 +1233,7 @@ export default function SessionSetup() {
               boardLabel={boardLabel}
               selectedClass={selectedClass}
               isSending={isSending}
+              streamingId={streamingId}
             />
           </aside>
         </div>
@@ -1197,6 +1284,7 @@ export default function SessionSetup() {
               boardLabel={boardLabel}
               selectedClass={selectedClass}
               isSending={isSending}
+              streamingId={streamingId}
             />
           </div>
         )}

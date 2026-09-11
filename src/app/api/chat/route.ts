@@ -28,7 +28,7 @@ function normalizeMessages(input: unknown): ChatMessage[] {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => null) as { messages?: unknown; temperature?: unknown } | null;
+    const body = await request.json().catch(() => null) as { messages?: unknown; temperature?: unknown; memoryContext?: string } | null;
     const normalizedMessages = normalizeMessages(body?.messages);
 
     if (normalizedMessages.length === 0) {
@@ -38,6 +38,8 @@ export async function POST(request: Request) {
     const temperature = typeof body?.temperature === "number" && Number.isFinite(body.temperature)
       ? Math.min(1.2, Math.max(0, body.temperature))
       : 0.7;
+
+    const memoryContext = typeof body?.memoryContext === "string" ? body.memoryContext : "";
 
     const available = getAvailableProviders();
     const providerList = available.length > 0 ? available.map((provider) => provider.name).join(" → ") : "No provider configured";
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
           const streamPromise = streamChat({
             messages: normalizedMessages,
             temperature,
-            systemPrompt: CBSE_SYSTEM_PROMPT,
+            systemPrompt: CBSE_SYSTEM_PROMPT + memoryContext,
             onChunk: (text) => {
               chunkCount += 1;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`));
