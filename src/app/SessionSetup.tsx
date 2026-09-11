@@ -283,7 +283,6 @@ function useVoice() {
         if (result.isFinal) {
           finalText += result[0].transcript + " ";
           finalTextRef.current = finalText;
-          lastSpeechTimeRef.current = Date.now(); // Track when we last heard speech
         } else {
           interimText += result[0].transcript;
         }
@@ -297,27 +296,30 @@ function useVoice() {
     };
 
     recognition.onend = () => {
-      // When recognition ends, check if we have text to send
+      console.log("[voice] Recognition ended, finalText:", finalTextRef.current.slice(0, 50));
+      
+      // If we have final text, send it
       if (finalTextRef.current.trim()) {
-        // We have final text — send it
-        setIsListening(false);
-        listeningRef.current = false;
-        restartCountRef.current = 0;
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          setIsListening(false);
+          listeningRef.current = false;
+          restartCountRef.current = 0;
+        }, 50);
         return;
       }
       
-      // No text yet — check if user was speaking recently (silence timeout)
-      const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
-      if (timeSinceLastSpeech < 2000) {
-        // User was speaking recently, restart to catch more
-        if (restartCountRef.current < 3) {
-          restartCountRef.current += 1;
-          try { recognition.start(); } catch {}
-          return;
-        }
+      // No text yet - try restarting to catch more speech
+      if (listeningRef.current && restartCountRef.current < 3) {
+        restartCountRef.current += 1;
+        console.log("[voice] Restarting recognition, attempt:", restartCountRef.current);
+        setTimeout(() => {
+          try { recognition.start(); } catch (e) { console.warn("[voice] restart failed:", e); }
+        }, 200);
+        return;
       }
       
-      // Stop listening — user is done or timed out
+      // Stop listening
       setIsListening(false);
       listeningRef.current = false;
       restartCountRef.current = 0;
@@ -337,7 +339,16 @@ function useVoice() {
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current) return;
+    if (!recognitionRef.current) {
+      console.warn("[voice] No recognition object available");
+      return;
+    }
+    
+    // Cancel any ongoing speech first
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    
     transcriptRef.current = "";
     finalTextRef.current = "";
     lastSpeechTimeRef.current = Date.now();
@@ -346,8 +357,12 @@ function useVoice() {
     setIsListening(true);
     listeningRef.current = true;
     restartCountRef.current = 0;
+    
     window.setTimeout(() => {
-      try { recognitionRef.current?.start(); } catch (error) {
+      try { 
+        recognitionRef.current?.start(); 
+        console.log("[voice] Recognition started");
+      } catch (error) {
         console.warn("[voice] start failed:", error);
         setIsListening(false);
         listeningRef.current = false;
@@ -423,26 +438,39 @@ function useTTS() {
       return;
     }
 
+    // Cancel any ongoing speech
     window.speechSynthesis.cancel();
+    
     const cleanText = text.replace(/\s+/g, " ").trim();
-    const chunks = cleanText.match(/.{1,220}(?:[.!?]\s|,\s|\s|$)/g)?.map((chunk) => chunk.trim()).filter(Boolean) || [cleanText];
+    // Split into smaller chunks for better reliability
+    const chunks = cleanText.match(/.{1,150}(?:[.!?]\s|,\s|\s|$)/g)?.map((chunk) => chunk.trim()).filter(Boolean) || [cleanText];
     const voice = chooseClearVoice();
     let remaining = chunks.length;
 
     const finishChunk = () => {
       remaining -= 1;
-      if (remaining <= 0) onDone?.();
+      if (remaining <= 0) {
+        onDone?.();
+      }
     };
 
-    chunks.forEach((chunk) => {
+    chunks.forEach((chunk, index) => {
       const utterance = new SpeechSynthesisUtterance(chunk);
       utterance.lang = voice?.lang || "en-US";
       utterance.voice = voice;
-      utterance.rate = 1.1;
+      utterance.rate = 0.85; // Slower, more natural pace
       utterance.pitch = 1.0;
-      utterance.volume = 1;
-      utterance.onend = finishChunk;
-      utterance.onerror = finishChunk;
+      utterance.volume = 1.0;
+      
+      // Add delay between chunks for natural pauses
+      utterance.onend = () => {
+        setTimeout(finishChunk, index < chunks.length - 1 ? 100 : 0);
+      };
+      utterance.onerror = (event) => {
+        console.warn("[TTS] utterance error:", event.error);
+        finishChunk();
+      };
+      
       window.speechSynthesis.speak(utterance);
     });
   }, [chooseClearVoice]);
@@ -1070,31 +1098,6 @@ export default function SessionSetup() {
     }
     return undefined;
   }, [isListening, sendMsg, transcript]);
-
-  // Silence detection: auto-stop after 3 seconds of no speech
-  useEffect(() => {
-    if (!isListening) return;
-    
-    const checkSilence = () => {
-      if (!listeningRef.current) return;
-      const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
-      
-      // If we have final text and it's been 1.5s since last speech, send it
-      if (finalTextRef.current.trim() && timeSinceLastSpeech > 1500) {
-        stopListening();
-        return;
-      }
-      
-      // If no speech for 3 seconds, stop
-      if (timeSinceLastSpeech > 3000) {
-        stopListening();
-        return;
-      }
-    };
-    
-    const interval = setInterval(checkSilence, 500);
-    return () => clearInterval(interval);
-  }, [isListening, stopListening]);
 
   const send = useCallback(() => {
     const trimmed = input.trim();
